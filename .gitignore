@@ -12,6 +12,7 @@ __pycache__/
 *.db
 *.sqlite*
 data/uploads/*
+!data/uploads/keep_for_test.jpg
 data/processed/*
 data/failed/*
 !data/**/.gitkeep

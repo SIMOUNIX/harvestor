@@ -10,32 +10,11 @@ import pytest
 
 
 @pytest.fixture
-def sample_invoice_image_path(tmp_path) -> Path:
+def sample_invoice_image_path() -> Path:
     """Provide path to sample invoice image."""
-    # Use the actual test image if it exists
-    actual_path = Path("data/uploads/Template1_Instance0.jpg")
+    actual_path = Path("data/uploads/keep_for_test.jpg")
     if actual_path.exists():
         return actual_path
-
-    # Otherwise create a minimal test image
-    test_image = tmp_path / "test_invoice.jpg"
-    # Create a minimal valid JPEG (1x1 pixel)
-    jpeg_data = bytes.fromhex(
-        "ffd8ffe000104a46494600010100000100010000"
-        "ffdb004300080606070605080707070909080a0c"
-        "140d0c0b0b0c1912130f141d1a1f1e1d1a1c1c20"
-        "2428342c202433251c1c28372c27313c3a3e3e3e"
-        "252d44494438433d3e3bffdb004301090909090c"
-        "0b0c180d0d1832211c213232323232323232323232"
-        "32323232323232323232323232323232323232323232"
-        "32323232323232323232323232ffc00011080001"
-        "000103012200021101031101ffc4001500010100"
-        "00000000000000000000000000000009ffc4001401"
-        "0100000000000000000000000000000000ffda000c"
-        "03010002110311003f00bf800ffd9"
-    )
-    test_image.write_bytes(jpeg_data)
-    return test_image
 
 
 @pytest.fixture

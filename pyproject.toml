@@ -3,7 +3,7 @@ name = "harvestor"
 version = "0.1.0"
 description = "Harvest intelligence from any document - AI-powered data extraction"
 readme = "README.md"
-requires-python = ">=3.10,<3.14"
+requires-python = ">=3.13,<3.14"
 license = {text = "MIT"}
 
 dependencies = [
