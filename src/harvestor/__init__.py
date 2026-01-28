@@ -19,6 +19,7 @@ from .schemas.base import (
     HarvestResult,
     ValidationResult,
 )
+from .config import SUPPORTED_MODELS
 
 __all__ = [
     "__version__",
@@ -29,4 +30,5 @@ __all__ = [
     "ExtractionStrategy",
     "HarvestResult",
     "ValidationResult",
+    "SUPPORTED_MODELS",
 ]

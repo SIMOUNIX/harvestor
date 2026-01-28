@@ -48,7 +48,7 @@ class LLMParser:
 
     def __init__(
         self,
-        model: str = "claude-3-haiku-20240307",
+        model: str = "Claude Haiku 3",
         api_key: Optional[str] = None,
         max_retries: int = 3,
         max_input_chars: int = 8000,

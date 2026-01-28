@@ -12,18 +12,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from ..schemas.base import CostReport, ExtractionStrategy
-
-# Model pricing (per million tokens)
-MODEL_PRICING = {
-    # Anthropic Claude
-    "claude-3-haiku-20240307": {"input": 0.25, "output": 1.25},
-    "claude-3-5-sonnet-20241022": {"input": 3.0, "output": 15.0},
-    "claude-3-opus-20240229": {"input": 15.0, "output": 75.0},
-    # OpenAI
-    "gpt-3.5-turbo": {"input": 0.50, "output": 1.50},
-    "gpt-4": {"input": 30.0, "output": 60.0},
-    "gpt-4-turbo": {"input": 10.0, "output": 30.0},
-}
+from ..config import SUPPORTED_MODELS
 
 
 @dataclass
@@ -118,11 +107,11 @@ class CostTracker:
         self, model: str, input_tokens: int, output_tokens: int
     ) -> float:
         """Calculate cost for a given API call."""
-        if model not in MODEL_PRICING:
+        if model not in SUPPORTED_MODELS:
             # Unknown model, use conservative estimate (GPT-4 pricing)
-            pricing = MODEL_PRICING["gpt-4"]
+            raise ModelNotSupported(f"Model {model} is not supported.")
         else:
-            pricing = MODEL_PRICING[model]
+            pricing = SUPPORTED_MODELS[model]
 
         input_cost = (input_tokens / 1_000_000) * pricing["input"]
         output_cost = (output_tokens / 1_000_000) * pricing["output"]
@@ -354,6 +343,12 @@ class CostTracker:
 
 class CostLimitExceeded(Exception):
     """Raised when a cost limit would be exceeded."""
+
+    pass
+
+
+class ModelNotSupported(Exception):
+    """Raised when the used model is not supported."""
 
     pass
 
