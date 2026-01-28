@@ -30,7 +30,7 @@ class ExtractionResult:
     # Core data (required fields first)
     success: bool
     data: Dict[str, Any]  # Extracted fields
-    strategy: ExtractionStrategy
+    strategy: ExtractionStrategy  # How the data was retrieved
 
     # Optional fields
     raw_text: Optional[str] = None
@@ -38,7 +38,7 @@ class ExtractionResult:
     processing_time: float = 0.0  # seconds
 
     # Cost tracking
-    cost: float = 0.0  # USD
+    cost: float = 0.0  # USD -> for llm calls
     tokens_used: int = 0
 
     # Error handling
@@ -73,7 +73,10 @@ class ExtractionResult:
 
 @dataclass
 class ValidationResult:
-    """Result from validation checks."""
+    """Result from validation checks. Determine is the document is legit.
+
+    Will be implemented later on.
+    """
 
     # Core validation
     is_valid: bool
@@ -191,13 +194,13 @@ class HarvestResult:
         strategy = self.final_strategy.value if self.final_strategy else "N/A"
 
         return f"""
-Harvest Result: {status}
-Document: {self.document_id} ({self.document_type})
-Strategy: {strategy}
-Confidence: {self.final_confidence:.2%}
-Cost: ${self.total_cost:.4f} ({self.get_cost_efficiency()})
-Time: {self.total_time:.2f}s
-Needs Review: {self.needs_review()}
+            Harvest Result: {status}
+            Document: {self.document_id} ({self.document_type})
+            Strategy: {strategy}
+            Confidence: {self.final_confidence:.2%}
+            Cost: ${self.total_cost:.4f} ({self.get_cost_efficiency()})
+            Time: {self.total_time:.2f}s
+            Needs Review: {self.needs_review()}
         """.strip()
 
 

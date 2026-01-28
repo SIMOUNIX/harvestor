@@ -2,7 +2,12 @@
 
 import pytest
 
-from harvestor.core.cost_tracker import CostLimitExceeded, CostTracker, cost_tracker
+from harvestor.core.cost_tracker import (
+    CostLimitExceeded,
+    CostTracker,
+    cost_tracker,
+    ModelNotSupported,
+)
 from harvestor.schemas.base import ExtractionStrategy
 
 
@@ -16,32 +21,29 @@ class TestCostCalculation:
     def test_calculate_haiku_cost(self):
         """Test cost calculation for Claude Haiku."""
         cost = cost_tracker.calculate_cost(
-            model="claude-3-haiku-20240307", input_tokens=1000, output_tokens=500
+            model="Claude Haiku 3", input_tokens=1000, output_tokens=500
         )
 
         # Haiku: $0.25/MTok input, $1.25/MTok output
         expected = (1000 / 1_000_000 * 0.25) + (500 / 1_000_000 * 1.25)
         assert cost == pytest.approx(expected)
 
-    def test_calculate_sonnet_cost(self):
-        """Test cost calculation for Claude Sonnet."""
+    def test_calculate_sonnet_3_7_cost(self):
+        """Test cost calculation for Claude Sonnet 3.7."""
         cost = cost_tracker.calculate_cost(
-            model="claude-3-5-sonnet-20241022", input_tokens=1000, output_tokens=500
+            model="Claude Sonnet 3.7", input_tokens=1000, output_tokens=500
         )
 
-        # Sonnet: $3/MTok input, $15/MTok output
+        # Sonnet 3.7: $3/MTok input, $15/MTok output
         expected = (1000 / 1_000_000 * 3.0) + (500 / 1_000_000 * 15.0)
         assert cost == pytest.approx(expected)
 
     def test_unknown_model_uses_gpt4_pricing(self):
         """Test that unknown models default to GPT-4 pricing."""
-        cost = cost_tracker.calculate_cost(
-            model="unknown-model", input_tokens=1000, output_tokens=500
-        )
-
-        # Should use GPT-4 pricing: $30/MTok input, $60/MTok output
-        expected = (1000 / 1_000_000 * 30.0) + (500 / 1_000_000 * 60.0)
-        assert cost == pytest.approx(expected)
+        with pytest.raises(ModelNotSupported):
+            cost_tracker.calculate_cost(
+                model="unknown-model", input_tokens=1000, output_tokens=500
+            )
 
 
 class TestCostTracking:
@@ -56,7 +58,7 @@ class TestCostTracking:
     def test_track_single_call(self):
         """Test tracking a single API call."""
         cost = cost_tracker.track_call(
-            model="claude-3-haiku-20240307",
+            model="Claude Haiku 3",
             strategy=ExtractionStrategy.LLM_HAIKU,
             input_tokens=1000,
             output_tokens=500,
@@ -73,7 +75,7 @@ class TestCostTracking:
         """Test tracking multiple API calls."""
         for i in range(3):
             cost_tracker.track_call(
-                model="claude-3-haiku-20240307",
+                model="Claude Haiku 3",
                 strategy=ExtractionStrategy.LLM_HAIKU,
                 input_tokens=1000,
                 output_tokens=500,
@@ -90,7 +92,7 @@ class TestCostTracking:
 
         # First call should succeed
         cost_tracker.track_call(
-            model="claude-3-haiku-20240307",
+            model="Claude Haiku 3",
             strategy=ExtractionStrategy.LLM_HAIKU,
             input_tokens=1000,
             output_tokens=500,
@@ -100,7 +102,7 @@ class TestCostTracking:
         # Second call for same document would exceed limit
         with pytest.raises(CostLimitExceeded):
             cost_tracker.track_call(
-                model="claude-3-5-sonnet-20241022",
+                model="Claude Sonnet 3.7",
                 strategy=ExtractionStrategy.LLM_SONNET,
                 input_tokens=10000,
                 output_tokens=5000,
@@ -113,7 +115,7 @@ class TestCostTracking:
 
         # First small call should succeed
         cost_tracker.track_call(
-            model="claude-3-haiku-20240307",
+            model="Claude Haiku 3",
             strategy=ExtractionStrategy.LLM_HAIKU,
             input_tokens=100,
             output_tokens=50,
@@ -123,7 +125,7 @@ class TestCostTracking:
         # Second call that would exceed daily limit
         with pytest.raises(CostLimitExceeded):
             cost_tracker.track_call(
-                model="claude-3-5-sonnet-20241022",
+                model="Claude Sonnet 3.7",
                 strategy=ExtractionStrategy.LLM_SONNET,
                 input_tokens=100000,
                 output_tokens=50000,
@@ -135,7 +137,7 @@ class TestCostTracking:
         doc_id = "test_doc"
 
         cost1 = cost_tracker.track_call(
-            model="claude-3-haiku-20240307",
+            model="Claude Haiku 3",
             strategy=ExtractionStrategy.LLM_HAIKU,
             input_tokens=1000,
             output_tokens=500,
@@ -143,7 +145,7 @@ class TestCostTracking:
         )
 
         cost2 = cost_tracker.track_call(
-            model="claude-3-haiku-20240307",
+            model="Claude Haiku 3",
             strategy=ExtractionStrategy.LLM_HAIKU,
             input_tokens=500,
             output_tokens=250,
@@ -166,7 +168,7 @@ class TestCostStatistics:
     def test_stats_by_model(self):
         """Test statistics grouped by model."""
         cost_tracker.track_call(
-            model="claude-3-haiku-20240307",
+            model="Claude Haiku 3",
             strategy=ExtractionStrategy.LLM_HAIKU,
             input_tokens=1000,
             output_tokens=500,
@@ -174,7 +176,7 @@ class TestCostStatistics:
         )
 
         cost_tracker.track_call(
-            model="claude-3-5-sonnet-20241022",
+            model="Claude Sonnet 3.7",
             strategy=ExtractionStrategy.LLM_SONNET,
             input_tokens=1000,
             output_tokens=500,
@@ -183,14 +185,14 @@ class TestCostStatistics:
 
         stats = cost_tracker.get_stats()
         assert len(stats.calls_by_model) == 2
-        assert "claude-3-haiku-20240307" in stats.calls_by_model
-        assert "claude-3-5-sonnet-20241022" in stats.calls_by_model
+        assert "Claude Haiku 3" in stats.calls_by_model
+        assert "Claude Sonnet 3.7" in stats.calls_by_model
 
     def test_average_cost_per_document(self):
         """Test average cost per document calculation."""
         for i in range(3):
             cost_tracker.track_call(
-                model="claude-3-haiku-20240307",
+                model="Claude Haiku 3",
                 strategy=ExtractionStrategy.LLM_HAIKU,
                 input_tokens=1000,
                 output_tokens=500,
@@ -205,7 +207,7 @@ class TestCostStatistics:
         """Test cost report generation."""
         # Track some successful calls
         cost_tracker.track_call(
-            model="claude-3-haiku-20240307",
+            model="Claude Haiku 3",
             strategy=ExtractionStrategy.LLM_HAIKU,
             input_tokens=1000,
             output_tokens=500,
@@ -228,7 +230,7 @@ class TestCostTrackerReset:
     def test_reset_clears_all_data(self):
         """Test that reset clears all tracked data."""
         cost_tracker.track_call(
-            model="claude-3-haiku-20240307",
+            model="Claude Haiku 3",
             strategy=ExtractionStrategy.LLM_HAIKU,
             input_tokens=1000,
             output_tokens=500,

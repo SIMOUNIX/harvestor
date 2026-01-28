@@ -30,7 +30,7 @@ class Harvester:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "claude-3-haiku-20240307",
+        model: str = "Claude Haiku 3",
         cost_limit_per_doc: float = 0.10,
         daily_cost_limit: Optional[float] = None,
     ):
@@ -615,7 +615,7 @@ def harvest(
     source: Union[str, Path, bytes, BinaryIO],
     doc_type: str = "invoice",
     language: str = "en",
-    model: str = "claude-3-haiku-20240307",
+    model: str = "Claude Haiku 3",
     api_key: Optional[str] = None,
     filename: Optional[str] = None,
 ) -> HarvestResult:

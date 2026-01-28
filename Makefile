@@ -20,15 +20,11 @@ test-cov: ## Run tests with coverage report
 test-quick: ## Run tests without coverage (faster)
 	pytest -x --tb=short
 
-test-watch: ## Run tests in watch mode (requires pytest-watch)
-	pytest-watch
-
 lint: ## Run linting checks
-	ruff check src/ tests/
-
-format: ## Format code with black
-	black src/ tests/
 	ruff check --fix src/ tests/
+
+format: ## Format code with Ruff
+	ruff format src/ tests/
 
 clean: ## Clean up generated files
 	rm -rf .pytest_cache

@@ -31,8 +31,8 @@ class TestHarvesterInitialization:
 
     def test_init_with_custom_model(self):
         """Test initialization with custom model."""
-        harvester = Harvester(api_key="sk-test-key", model="claude-3-5-sonnet-20241022")
-        assert harvester.model == "claude-3-5-sonnet-20241022"
+        harvester = Harvester(api_key="sk-test-key", model="Claude Sonnet 3.7")
+        assert harvester.model == "Claude Sonnet 3.7"
 
     def test_init_sets_cost_limits(self):
         """Test that initialization sets cost limits."""
