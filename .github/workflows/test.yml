@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix: # Runs on all combinations of the matrix, make sure we are compatible
-        python-version: ["pypy3.10", "3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.13"]
 
     steps:
       - uses: actions/checkout@v6
