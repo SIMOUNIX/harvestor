@@ -10,7 +10,7 @@ install: ## Install package with dev dependencies
 	uv sync --extra dev
 
 test: ## Run all tests with verbose output
-	pytest -v
+	uv run pytest -v
 
 test-cov: ## Run tests with coverage report
 	pytest --cov=src/harvestor --cov-report=term-missing --cov-report=html
@@ -18,13 +18,13 @@ test-cov: ## Run tests with coverage report
 	@echo "Coverage report generated in htmlcov/index.html"
 
 test-quick: ## Run tests without coverage (faster)
-	pytest -x --tb=short
+	uv run pytest -x --tb=short
 
 lint: ## Run linting checks
-	ruff check --fix src/ tests/
+	uv run ruff check --fix src/ tests/
 
 format: ## Format code with Ruff
-	ruff format src/ tests/
+	uv run ruff format src/ tests/
 
 clean: ## Clean up generated files
 	rm -rf .pytest_cache

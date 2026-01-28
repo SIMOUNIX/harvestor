@@ -7,7 +7,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true # Cancel last job if still running
+  cancel-in-progress: false # Cancel last job if still running
 
 jobs:
   test:
@@ -30,7 +30,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: make install
 
       - name: Run tests
         run: uv run pytest -v
