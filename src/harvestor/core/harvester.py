@@ -6,11 +6,11 @@ This is the primary public API for Harvestor.
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import List, Optional, Union
 
 from ..core.cost_tracker import cost_tracker
-from ..parsers.llm_parser import InvoiceData, LLMParser
-from ..schemas.base import ExtractionStrategy, HarvestResult
+from ..parsers.llm_parser import LLMParser
+from ..schemas.base import HarvestResult
 
 
 class Harvester:
@@ -30,7 +30,7 @@ class Harvester:
         api_key: Optional[str] = None,
         model: str = "claude-3-haiku-20240307",
         cost_limit_per_doc: float = 0.10,
-        daily_cost_limit: Optional[float] = None
+        daily_cost_limit: Optional[float] = None,
     ):
         """
         Initialize Harvester.
@@ -52,22 +52,18 @@ class Harvester:
 
         # Set cost limits
         cost_tracker.set_limits(
-            daily_limit=daily_cost_limit,
-            per_document_limit=cost_limit_per_doc
+            daily_limit=daily_cost_limit, per_document_limit=cost_limit_per_doc
         )
 
         # Initialize LLM parser
-        self.llm_parser = LLMParser(
-            model=model,
-            api_key=self.api_key
-        )
+        self.llm_parser = LLMParser(model=model, api_key=self.api_key)
 
     def harvest_text(
         self,
         text: str,
         doc_type: str = "invoice",
         document_id: Optional[str] = None,
-        language: str = "en"
+        language: str = "en",
     ) -> HarvestResult:
         """
         Extract structured data from text.
@@ -94,9 +90,7 @@ class Harvester:
 
         # Extract using LLM
         extraction_result = self.llm_parser.extract(
-            text=text,
-            doc_type=doc_type,
-            document_id=document_id
+            text=text, doc_type=doc_type, document_id=document_id
         )
 
         total_time = time.time() - start_time
@@ -111,12 +105,10 @@ class Harvester:
             final_strategy=extraction_result.strategy,
             final_confidence=extraction_result.confidence,
             total_cost=extraction_result.cost,
-            cost_breakdown={
-                extraction_result.strategy.value: extraction_result.cost
-            },
+            cost_breakdown={extraction_result.strategy.value: extraction_result.cost},
             total_time=total_time,
             error=extraction_result.error,
-            language=language
+            language=language,
         )
 
     def harvest_file(
@@ -124,7 +116,7 @@ class Harvester:
         file_path: Union[str, Path],
         doc_type: str = "invoice",
         document_id: Optional[str] = None,
-        language: str = "en"
+        language: str = "en",
     ) -> HarvestResult:
         """
         Extract structured data from a file.
@@ -158,7 +150,7 @@ class Harvester:
                 data={},
                 error=f"File not found: {file_path}",
                 file_path=str(file_path),
-                total_time=time.time() - start_time
+                total_time=time.time() - start_time,
             )
 
         # Get file info
@@ -177,15 +169,12 @@ class Harvester:
                 error=f"Failed to extract text: {str(e)}",
                 file_path=str(file_path),
                 file_size_bytes=file_size,
-                total_time=time.time() - start_time
+                total_time=time.time() - start_time,
             )
 
         # Use harvest_text for actual extraction
         result = self.harvest_text(
-            text=text,
-            doc_type=doc_type,
-            document_id=document_id,
-            language=language
+            text=text, doc_type=doc_type, document_id=document_id, language=language
         )
 
         # Add file metadata
@@ -209,12 +198,12 @@ class Harvester:
         """
         suffix = file_path.suffix.lower()
 
-        if suffix == '.txt':
+        if suffix == ".txt":
             # Plain text file
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 return f.read()
 
-        elif suffix == '.pdf':
+        elif suffix == ".pdf":
             # PDF file - use pdfplumber for native text extraction
             try:
                 import pdfplumber
@@ -232,7 +221,9 @@ class Harvester:
                 return "\n\n".join(text_parts)
 
             except ImportError:
-                raise ValueError("pdfplumber not installed. Install with: pip install pdfplumber")
+                raise ValueError(
+                    "pdfplumber not installed. Install with: pip install pdfplumber"
+                )
 
         else:
             raise ValueError(f"Unsupported file type: {suffix}. Supported: .txt, .pdf")
@@ -241,7 +232,7 @@ class Harvester:
         self,
         files: List[Union[str, Path]],
         doc_type: str = "invoice",
-        show_progress: bool = True
+        show_progress: bool = True,
     ) -> List[HarvestResult]:
         """
         Process multiple documents.
@@ -259,6 +250,7 @@ class Harvester:
         if show_progress:
             try:
                 from tqdm import tqdm
+
                 iterator = tqdm(files, desc="Processing documents")
             except ImportError:
                 iterator = files
@@ -266,10 +258,7 @@ class Harvester:
             iterator = files
 
         for file_path in iterator:
-            result = self.harvest_file(
-                file_path=file_path,
-                doc_type=doc_type
-            )
+            result = self.harvest_file(file_path=file_path, doc_type=doc_type)
             results.append(result)
 
         return results
@@ -284,7 +273,7 @@ def harvest(
     doc_type: str = "invoice",
     language: str = "en",
     model: str = "claude-3-haiku-20240307",
-    api_key: Optional[str] = None
+    api_key: Optional[str] = None,
 ) -> HarvestResult:
     """
     One-liner function for quick extraction.
@@ -311,7 +300,5 @@ def harvest(
     """
     harvester = Harvester(api_key=api_key, model=model)
     return harvester.harvest_file(
-        file_path=file_path,
-        doc_type=doc_type,
-        language=language
+        file_path=file_path, doc_type=doc_type, language=language
     )

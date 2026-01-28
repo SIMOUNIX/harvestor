@@ -51,7 +51,7 @@ class LLMParser:
         model: str = "claude-3-haiku-20240307",
         api_key: Optional[str] = None,
         max_retries: int = 3,
-        max_input_chars: int = 8000
+        max_input_chars: int = 8000,
     ):
         """
         Initialize LLM parser.
@@ -112,9 +112,11 @@ class LLMParser:
         end = text[-keep_end:]
 
         removed_chars = len(text) - (keep_start + keep_end)
-        removed_lines = text[keep_start:-keep_end].count('\n')
+        removed_lines = text[keep_start:-keep_end].count("\n")
 
-        truncation_marker = f"\n\n[... {removed_lines} lines removed ({removed_chars} chars) ...]\n\n"
+        truncation_marker = (
+            f"\n\n[... {removed_lines} lines removed ({removed_chars} chars) ...]\n\n"
+        )
 
         return start + truncation_marker + end
 
@@ -149,7 +151,7 @@ JSON:"""
         text: str,
         doc_type: str = "invoice",
         schema: Type[BaseModel] = InvoiceData,
-        document_id: Optional[str] = None
+        document_id: Optional[str] = None,
     ) -> ExtractionResult:
         """
         Extract structured data from text using LLM.
@@ -175,9 +177,7 @@ JSON:"""
         for attempt in range(self.max_retries):
             try:
                 result = self._extract_with_anthropic(
-                    prompt=prompt,
-                    schema=schema,
-                    document_id=document_id
+                    prompt=prompt, schema=schema, document_id=document_id
                 )
 
                 processing_time = time.time() - start_time
@@ -194,8 +194,8 @@ JSON:"""
                     metadata={
                         "model": self.model,
                         "attempt": attempt + 1,
-                        "truncated": len(text) < len(text)
-                    }
+                        "truncated": len(text) < len(text),
+                    },
                 )
 
             except ValidationError as e:
@@ -211,7 +211,7 @@ JSON:"""
                         strategy=self.strategy,
                         confidence=0.0,
                         processing_time=processing_time,
-                        error=f"Validation failed after {self.max_retries} attempts: {str(e)}"
+                        error=f"Validation failed after {self.max_retries} attempts: {str(e)}",
                     )
 
             except Exception as e:
@@ -222,14 +222,11 @@ JSON:"""
                     strategy=self.strategy,
                     confidence=0.0,
                     processing_time=processing_time,
-                    error=f"Extraction failed: {str(e)}"
+                    error=f"Extraction failed: {str(e)}",
                 )
 
     def _extract_with_anthropic(
-        self,
-        prompt: str,
-        schema: Type[BaseModel],
-        document_id: Optional[str] = None
+        self, prompt: str, schema: Type[BaseModel], document_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Extract using Anthropic API with structured output.
@@ -247,9 +244,7 @@ JSON:"""
             model=self.model,
             max_tokens=2048,
             temperature=0.0,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
+            messages=[{"role": "user", "content": prompt}],
         )
 
         # Extract tokens and calculate cost
@@ -262,7 +257,7 @@ JSON:"""
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             document_id=document_id,
-            success=True
+            success=True,
         )
 
         # Parse response
@@ -271,8 +266,8 @@ JSON:"""
         # Try to extract JSON from response
         try:
             # Find JSON in response (might have explanatory text)
-            json_start = response_text.find('{')
-            json_end = response_text.rfind('}') + 1
+            json_start = response_text.find("{")
+            json_end = response_text.rfind("}") + 1
 
             if json_start >= 0 and json_end > json_start:
                 json_str = response_text[json_start:json_end]
@@ -288,17 +283,14 @@ JSON:"""
                 "data": validated_data.dict(),
                 "cost": cost,
                 "tokens": input_tokens + output_tokens,
-                "confidence": 0.85  # Default confidence for LLM extraction
+                "confidence": 0.85,  # Default confidence for LLM extraction
             }
 
         except json.JSONDecodeError as e:
             raise ValidationError(f"Failed to parse JSON: {str(e)}")
 
     def extract_with_langchain(
-        self,
-        text: str,
-        doc_type: str = "invoice",
-        document_id: Optional[str] = None
+        self, text: str, doc_type: str = "invoice", document_id: Optional[str] = None
     ) -> ExtractionResult:
         """
         Alternative extraction using LangChain chains.
@@ -321,8 +313,7 @@ JSON:"""
 
         # Create LangChain prompt template
         prompt_template = PromptTemplate(
-            input_variables=["text"],
-            template=self.create_prompt("{text}", doc_type)
+            input_variables=["text"], template=self.create_prompt("{text}", doc_type)
         )
 
         try:
@@ -330,8 +321,8 @@ JSON:"""
             result = self.llm.predict(prompt_template.format(text=text))
 
             # Parse JSON response
-            json_start = result.find('{')
-            json_end = result.rfind('}') + 1
+            json_start = result.find("{")
+            json_end = result.rfind("}") + 1
 
             if json_start >= 0 and json_end > json_start:
                 json_str = result[json_start:json_end]
@@ -354,7 +345,7 @@ JSON:"""
                 processing_time=processing_time,
                 cost=estimated_cost,
                 tokens_used=0,  # Unknown with LangChain
-                warnings=["Using LangChain predict - token counts unavailable"]
+                warnings=["Using LangChain predict - token counts unavailable"],
             )
 
         except Exception as e:
@@ -365,5 +356,5 @@ JSON:"""
                 strategy=self.strategy,
                 confidence=0.0,
                 processing_time=processing_time,
-                error=f"LangChain extraction failed: {str(e)}"
+                error=f"LangChain extraction failed: {str(e)}",
             )

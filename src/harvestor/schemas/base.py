@@ -13,14 +13,14 @@ from typing import Any, Dict, List, Optional
 class ExtractionStrategy(str, Enum):
     """Strategies for extracting data from documents."""
 
-    NATIVE_PDF = "native_pdf"          # Extract text directly from PDF
+    NATIVE_PDF = "native_pdf"  # Extract text directly from PDF
     LAYOUT_ANALYSIS = "layout_analysis"  # Position-based extraction
     TABLE_EXTRACTION = "table_extraction"  # Extract structured tables
     KEYWORD_PROXIMITY = "keyword_proximity"  # Find values near keywords
-    OCR = "ocr"                        # Tesseract OCR
-    LLM_HAIKU = "llm_haiku"           # Claude Haiku
-    LLM_SONNET = "llm_sonnet"         # Claude Sonnet
-    LLM_GPT35 = "llm_gpt35"           # GPT-3.5-turbo
+    OCR = "ocr"  # Tesseract OCR
+    LLM_HAIKU = "llm_haiku"  # Claude Haiku
+    LLM_SONNET = "llm_sonnet"  # Claude Sonnet
+    LLM_GPT35 = "llm_gpt35"  # GPT-3.5-turbo
 
 
 @dataclass
@@ -52,7 +52,9 @@ class ExtractionResult:
     def __post_init__(self):
         """Validate confidence is between 0 and 1."""
         if not 0.0 <= self.confidence <= 1.0:
-            raise ValueError(f"Confidence must be between 0 and 1, got {self.confidence}")
+            raise ValueError(
+                f"Confidence must be between 0 and 1, got {self.confidence}"
+            )
 
     def is_high_confidence(self, threshold: float = 0.8) -> bool:
         """Check if extraction confidence is above threshold."""
@@ -65,7 +67,7 @@ class ExtractionResult:
             ExtractionStrategy.LAYOUT_ANALYSIS,
             ExtractionStrategy.TABLE_EXTRACTION,
             ExtractionStrategy.KEYWORD_PROXIMITY,
-            ExtractionStrategy.OCR
+            ExtractionStrategy.OCR,
         }
 
 
@@ -154,8 +156,7 @@ class HarvestResult:
             return 0.0
 
         free_successes = sum(
-            1 for r in self.extraction_results
-            if r.is_free_method() and r.success
+            1 for r in self.extraction_results if r.is_free_method() and r.success
         )
         return free_successes / len(self.extraction_results)
 

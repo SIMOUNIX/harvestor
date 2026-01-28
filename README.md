@@ -40,7 +40,7 @@ python -c "from harvestor import __version__; print(__version__)"
 
 For testing and evaluation, we are using the following dataset:
 
-Limam, M., et al. FATURA Dataset. Zenodo, 13 Dec. 2023, https://doi.org/10.5281/zenodo.10371464.
+> Limam, M., et al. FATURA Dataset. Zenodo, 13 Dec. 2023, https://doi.org/10.5281/zenodo.10371464.
 
 ## License
 
