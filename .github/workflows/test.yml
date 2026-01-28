@@ -3,7 +3,9 @@ name: Tests
 on:
   push: # Every push
   pull_request:
-    branches: [main, master]
+    branches:
+      - main
+    types: [closed]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
