@@ -11,8 +11,22 @@ import sys
 if sys.version_info < (3, 10):
     raise RuntimeError("Harvestor requires Python 3.10 or higher")
 
-# Will implement these later
-# from .core.harvester import Harvester, harvest
-# from .core.pipeline import Pipeline
+from .core.harvester import Harvester, harvest
+from .core.cost_tracker import cost_tracker
+from .schemas.base import (
+    ExtractionResult,
+    ExtractionStrategy,
+    HarvestResult,
+    ValidationResult,
+)
 
-__all__ = ["__version__"]
+__all__ = [
+    "__version__",
+    "harvest",
+    "Harvester",
+    "cost_tracker",
+    "ExtractionResult",
+    "ExtractionStrategy",
+    "HarvestResult",
+    "ValidationResult",
+]
