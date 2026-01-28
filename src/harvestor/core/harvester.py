@@ -4,9 +4,11 @@ Main Harvester class for document data extraction.
 This is the primary public API for Harvestor.
 """
 
+import base64
+import io
 import os
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import BinaryIO, List, Optional, Union
 
 from ..core.cost_tracker import cost_tracker
 from ..parsers.llm_parser import LLMParser
@@ -113,75 +115,174 @@ class Harvester:
 
     def harvest_file(
         self,
-        file_path: Union[str, Path],
+        source: Union[str, Path, bytes, BinaryIO],
         doc_type: str = "invoice",
         document_id: Optional[str] = None,
         language: str = "en",
+        filename: Optional[str] = None,
     ) -> HarvestResult:
         """
-        Extract structured data from a file.
+        Extract structured data from a file, bytes, or file-like object.
 
-        Currently supports:
+        This method accepts multiple input types for maximum flexibility:
+        - str/Path: File path to read from disk
+        - bytes: Raw file content as bytes
+        - BinaryIO: File-like object (e.g., io.BytesIO, opened file)
+
+        Supported formats:
+        - Images (.jpg, .jpeg, .png, .gif, .webp) - uses vision API
         - Text files (.txt)
         - PDF files (.pdf) - extracts text first
 
-        Future: Will implement smart extraction cascade (native PDF → layout → OCR → LLM)
-
         Args:
-            file_path: Path to document file
-            doc_type: Type of document
-            document_id: Unique identifier
+            source: File path, bytes, or file-like object
+            doc_type: Type of document (invoice, receipt, etc.)
+            document_id: Unique identifier (auto-generated if not provided)
             language: Document language
+            filename: Original filename (used when source is bytes/file-like)
 
         Returns:
             HarvestResult with extracted data
+
+        Examples:
+            >>> # From file path (str or Path)
+            >>> result = harvester.harvest_file("invoice.jpg")
+
+            >>> # From bytes
+            >>> with open("invoice.jpg", "rb") as f:
+            ...     data = f.read()
+            >>> result = harvester.harvest_file(data, filename="invoice.jpg")
+
+            >>> # From file-like object
+            >>> from io import BytesIO
+            >>> buffer = BytesIO(image_data)
+            >>> result = harvester.harvest_file(buffer, filename="invoice.jpg")
         """
         import time
+        from datetime import datetime
 
         start_time = time.time()
-        file_path = Path(file_path)
 
-        # Validate file exists
-        if not file_path.exists():
+        # Detect input type and normalize to bytes + metadata
+        file_bytes: Optional[bytes] = None
+        file_path_str: Optional[str] = None
+        file_size: Optional[int] = None
+        inferred_filename: Optional[str] = None
+
+        if isinstance(source, (str, Path)):
+            # Path-based input
+            file_path = Path(source)
+            file_path_str = str(file_path)
+            inferred_filename = file_path.name
+
+            if not file_path.exists():
+                return HarvestResult(
+                    success=False,
+                    document_id=document_id or file_path.stem,
+                    document_type=doc_type,
+                    data={},
+                    error=f"File not found: {file_path}",
+                    file_path=file_path_str,
+                    total_time=time.time() - start_time,
+                )
+
+            file_size = file_path.stat().st_size
+            document_id = document_id or file_path.stem
+
+            # Read file content for image processing
+            with open(file_path, "rb") as f:
+                file_bytes = f.read()
+
+        elif isinstance(source, bytes):
+            # Bytes input
+            file_bytes = source
+            file_size = len(source)
+            inferred_filename = (
+                filename or f"doc_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            )
+            document_id = document_id or Path(inferred_filename).stem
+
+        elif hasattr(source, "read"):
+            # File-like object (BinaryIO)
+            file_bytes = source.read()
+            file_size = len(file_bytes)
+
+            # Try to get filename from file object
+            if hasattr(source, "name"):
+                inferred_filename = Path(source.name).name
+            else:
+                inferred_filename = (
+                    filename or f"doc_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                )
+
+            document_id = document_id or Path(inferred_filename).stem
+
+        else:
             return HarvestResult(
                 success=False,
-                document_id=document_id or file_path.stem,
+                document_id=document_id or "unknown",
                 document_type=doc_type,
                 data={},
-                error=f"File not found: {file_path}",
-                file_path=str(file_path),
+                error=f"Unsupported source type: {type(source)}. Use str, Path, bytes, or file-like object.",
                 total_time=time.time() - start_time,
             )
 
-        # Get file info
-        file_size = file_path.stat().st_size
-        document_id = document_id or file_path.stem
+        # Use provided filename or inferred one
+        final_filename = filename or inferred_filename
 
-        # Extract text based on file type
+        # Determine file type from filename
+        file_extension = Path(final_filename).suffix.lower()
+
         try:
-            text = self._extract_text_from_file(file_path)
+            # Route to appropriate extraction method based on file type
+            if file_extension in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
+                # Image file - use vision API
+                result = self._harvest_image(
+                    image_bytes=file_bytes,
+                    doc_type=doc_type,
+                    document_id=document_id,
+                    language=language,
+                    filename=final_filename,
+                )
+            elif file_extension in [".txt", ".pdf"]:
+                # Text-based file - extract text first
+                text = self._extract_text_from_bytes(file_bytes, file_extension)
+                result = self.harvest_text(
+                    text=text,
+                    doc_type=doc_type,
+                    document_id=document_id,
+                    language=language,
+                )
+            else:
+                return HarvestResult(
+                    success=False,
+                    document_id=document_id,
+                    document_type=doc_type,
+                    data={},
+                    error=f"Unsupported file type: {file_extension}. Supported: .jpg, .jpeg, .png, .gif, .webp, .txt, .pdf",
+                    file_path=file_path_str,
+                    file_size_bytes=file_size,
+                    total_time=time.time() - start_time,
+                )
+
+            # Add file metadata to result
+            if file_path_str:
+                result.file_path = file_path_str
+            result.file_size_bytes = file_size
+
+            return result
+
         except Exception as e:
             return HarvestResult(
                 success=False,
                 document_id=document_id,
                 document_type=doc_type,
                 data={},
-                error=f"Failed to extract text: {str(e)}",
-                file_path=str(file_path),
+                error=f"Extraction failed: {str(e)}",
+                file_path=file_path_str,
                 file_size_bytes=file_size,
                 total_time=time.time() - start_time,
             )
-
-        # Use harvest_text for actual extraction
-        result = self.harvest_text(
-            text=text, doc_type=doc_type, document_id=document_id, language=language
-        )
-
-        # Add file metadata
-        result.file_path = str(file_path)
-        result.file_size_bytes = file_size
-
-        return result
 
     def _extract_text_from_file(self, file_path: Path) -> str:
         """
@@ -228,6 +329,248 @@ class Harvester:
         else:
             raise ValueError(f"Unsupported file type: {suffix}. Supported: .txt, .pdf")
 
+    def _extract_text_from_bytes(self, file_bytes: bytes, file_extension: str) -> str:
+        """
+        Extract text from bytes based on file type.
+
+        Args:
+            file_bytes: Raw file content
+            file_extension: File extension (e.g., '.txt', '.pdf')
+
+        Returns:
+            Extracted text
+
+        Raises:
+            ValueError: If file type is not supported
+        """
+        if file_extension == ".txt":
+            # Plain text file
+            return file_bytes.decode("utf-8")
+
+        elif file_extension == ".pdf":
+            # PDF file - use pdfplumber
+            try:
+                import pdfplumber
+
+                text_parts = []
+                with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+                    for page in pdf.pages:
+                        page_text = page.extract_text()
+                        if page_text:
+                            text_parts.append(page_text)
+
+                if not text_parts:
+                    raise ValueError("No text found in PDF (might need OCR)")
+
+                return "\n\n".join(text_parts)
+
+            except ImportError:
+                raise ValueError(
+                    "pdfplumber not installed. Install with: pip install pdfplumber"
+                )
+
+        else:
+            raise ValueError(
+                f"Unsupported file type: {file_extension}. Supported: .txt, .pdf"
+            )
+
+    def _harvest_image(
+        self,
+        image_bytes: bytes,
+        doc_type: str = "invoice",
+        document_id: Optional[str] = None,
+        language: str = "en",
+        filename: Optional[str] = None,
+    ) -> HarvestResult:
+        """
+        Extract structured data from an image using Claude's vision API.
+
+        Args:
+            image_bytes: Raw image data
+            doc_type: Document type
+            document_id: Document identifier
+            language: Document language
+            filename: Original filename for determining image type
+
+        Returns:
+            HarvestResult with extracted data
+        """
+        import json
+        import time
+
+        from anthropic import Anthropic
+
+        from ..schemas.base import ExtractionResult, ExtractionStrategy
+
+        start_time = time.time()
+
+        # Determine image media type from filename
+        if filename:
+            extension = Path(filename).suffix.lower().replace(".", "")
+            if extension == "jpg":
+                media_type = "image/jpeg"
+            else:
+                media_type = f"image/{extension}"
+        else:
+            # Default to jpeg
+            media_type = "image/jpeg"
+
+        # Encode image to base64
+        image_b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
+
+        # Create extraction prompt based on document type
+        if doc_type == "invoice":
+            fields = """- invoice_number: The invoice number
+- date: Invoice date
+- due_date: Due date
+- po_number: Purchase order number
+- vendor_name: Vendor/seller name
+- vendor_address: Vendor address
+- vendor_email: Vendor email
+- vendor_gstin: Vendor GSTIN/tax ID
+- customer_name: Customer/buyer name
+- customer_address: Customer address
+- customer_email: Customer email
+- customer_phone: Customer phone
+- gstin: Customer GSTIN
+- line_items: Array of items with description, quantity, and price
+- subtotal: Subtotal amount
+- tax_amount: Tax amount with percentage
+- discount: Discount amount if any
+- total_amount: Total amount
+- currency: Currency code (EUR, USD, etc.)
+- bank_name: Bank name
+- bank_account: Bank account number
+- bank_swift: Bank SWIFT/BIC code
+- notes: Any special notes"""
+        else:
+            fields = "all relevant data fields"
+
+        prompt = f"""Extract structured data from this {doc_type} image.
+
+Return a JSON object with the following fields:
+{fields}
+
+Extract all available information. Return only the JSON object, no other text."""
+
+        # Initialize Anthropic client
+        client = Anthropic(api_key=self.api_key)
+
+        # Call vision API
+        response = client.messages.create(
+            model=self.model,
+            max_tokens=2048,
+            temperature=0.0,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": image_b64,
+                            },
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ],
+        )
+
+        # Extract token usage
+        input_tokens = response.usage.input_tokens
+        output_tokens = response.usage.output_tokens
+
+        # Determine strategy based on model
+        if "haiku" in self.model.lower():
+            strategy = ExtractionStrategy.LLM_HAIKU
+        elif "sonnet" in self.model.lower():
+            strategy = ExtractionStrategy.LLM_SONNET
+        else:
+            strategy = ExtractionStrategy.LLM_HAIKU
+
+        # Track cost
+        cost = cost_tracker.track_call(
+            model=self.model,
+            strategy=strategy,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            document_id=document_id,
+            success=True,
+        )
+
+        # Parse response
+        response_text = response.content[0].text
+        processing_time = time.time() - start_time
+
+        try:
+            # Extract JSON from response
+            json_start = response_text.find("{")
+            json_end = response_text.rfind("}") + 1
+
+            if json_start >= 0 and json_end > json_start:
+                json_str = response_text[json_start:json_end]
+                data = json.loads(json_str)
+            else:
+                data = json.loads(response_text)
+
+            # Create extraction result
+            extraction_result = ExtractionResult(
+                success=True,
+                data=data,
+                raw_text=response_text[:500],
+                strategy=strategy,
+                confidence=0.85,
+                processing_time=processing_time,
+                cost=cost,
+                tokens_used=input_tokens + output_tokens,
+                metadata={
+                    "model": self.model,
+                    "media_type": media_type,
+                    "vision_api": True,
+                },
+            )
+
+            # Build harvest result
+            return HarvestResult(
+                success=True,
+                document_id=document_id,
+                document_type=doc_type,
+                data=data,
+                extraction_results=[extraction_result],
+                final_strategy=strategy,
+                final_confidence=0.85,
+                total_cost=cost,
+                cost_breakdown={strategy.value: cost},
+                total_time=processing_time,
+                language=language,
+            )
+
+        except json.JSONDecodeError as e:
+            return HarvestResult(
+                success=False,
+                document_id=document_id,
+                document_type=doc_type,
+                data={},
+                error=f"Failed to parse JSON response: {str(e)}",
+                total_cost=cost,
+                total_time=processing_time,
+                language=language,
+            )
+        except Exception as e:
+            return HarvestResult(
+                success=False,
+                document_id=document_id,
+                document_type=doc_type,
+                data={},
+                error=f"Vision API extraction failed: {str(e)}",
+                total_cost=cost,
+                total_time=processing_time,
+                language=language,
+            )
+
     def harvest_batch(
         self,
         files: List[Union[str, Path]],
@@ -257,8 +600,8 @@ class Harvester:
         else:
             iterator = files
 
-        for file_path in iterator:
-            result = self.harvest_file(file_path=file_path, doc_type=doc_type)
+        for file_source in iterator:
+            result = self.harvest_file(source=file_source, doc_type=doc_type)
             results.append(result)
 
         return results
@@ -269,36 +612,51 @@ class Harvester:
 
 
 def harvest(
-    file_path: Union[str, Path],
+    source: Union[str, Path, bytes, BinaryIO],
     doc_type: str = "invoice",
     language: str = "en",
     model: str = "claude-3-haiku-20240307",
     api_key: Optional[str] = None,
+    filename: Optional[str] = None,
 ) -> HarvestResult:
     """
     One-liner function for quick extraction.
 
-    Example:
+    Accepts file paths, bytes, or file-like objects for maximum flexibility.
+
+    Examples:
         ```python
         from harvestor import harvest
 
+        # From file path
         result = harvest("invoice.pdf", doc_type="invoice")
         print(f"Invoice #: {result.data.get('invoice_number')}")
         print(f"Total: ${result.data.get('total_amount')}")
         print(f"Cost: ${result.total_cost:.4f}")
+
+        # From bytes
+        with open("invoice.jpg", "rb") as f:
+            data = f.read()
+        result = harvest(data, filename="invoice.jpg")
+
+        # From file-like object
+        from io import BytesIO
+        buffer = BytesIO(image_data)
+        result = harvest(buffer, filename="invoice.jpg")
         ```
 
     Args:
-        file_path: Path to document
+        source: File path, bytes, or file-like object
         doc_type: Document type
         language: Document language
         model: LLM model to use
         api_key: API key (uses env var if not provided)
+        filename: Original filename (required when source is bytes/file-like)
 
     Returns:
         HarvestResult with extracted data
     """
     harvester = Harvester(api_key=api_key, model=model)
     return harvester.harvest_file(
-        file_path=file_path, doc_type=doc_type, language=language
+        source=source, doc_type=doc_type, language=language, filename=filename
     )

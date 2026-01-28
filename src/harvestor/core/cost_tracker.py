@@ -13,7 +13,6 @@ from typing import Dict, List, Optional
 
 from ..schemas.base import CostReport, ExtractionStrategy
 
-
 # Model pricing (per million tokens)
 MODEL_PRICING = {
     # Anthropic Claude
