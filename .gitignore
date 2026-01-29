@@ -15,6 +15,7 @@ data/uploads/*
 !data/uploads/keep_for_test.jpg
 data/processed/*
 data/failed/*
+data/output/*
 !data/**/.gitkeep
 
 # Logs

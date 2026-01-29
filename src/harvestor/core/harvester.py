@@ -6,13 +6,20 @@ This is the primary public API for Harvestor.
 
 import base64
 import io
+import json
 import os
+import re
+import time
+from datetime import datetime
 from pathlib import Path
-from typing import BinaryIO, List, Optional, Union
+from typing import BinaryIO, List, Optional, Type, Union
+
+from anthropic import Anthropic
+from pydantic import BaseModel
 
 from ..core.cost_tracker import cost_tracker
 from ..parsers.llm_parser import LLMParser
-from ..schemas.base import HarvestResult
+from ..schemas.base import ExtractionResult, ExtractionStrategy, HarvestResult
 
 
 class Harvester:
@@ -21,8 +28,8 @@ class Harvester:
 
     Features:
     - Extract structured data from documents
-    - Multiple extraction strategies (LLM, OCR, layout analysis)
-    - Cost optimization (free methods first, LLM fallback)
+    - Multiple extraction strategies (LLM)
+    - Cost optimization (LLM fallback for now)
     - Batch processing support
     - Progress tracking and reporting
     """
@@ -60,10 +67,32 @@ class Harvester:
         # Initialize LLM parser
         self.llm_parser = LLMParser(model=model, api_key=self.api_key)
 
+    def get_doc_type_from_schema(schema: type[BaseModel]) -> str:
+        """
+        Extract doc_type from schema class name.
+
+        InvoiceSchema -> invoice
+        IDDocumentOutput -> id_document
+        CustomerReceiptData -> customer_receipt
+        """
+        name = type(schema).__name__
+
+        # Remove common suffixes
+        for suffix in ("Schema", "Output", "Data", "Model"):
+            if name.endswith(suffix):
+                name = name[: -len(suffix)]
+                break
+
+        # Convert CamelCase to snake_case
+        # "IDDocument" -> "id_document"
+        name = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+        return name
+
     def harvest_text(
         self,
         text: str,
-        doc_type: str = "invoice",
+        doc_type: str,
         document_id: Optional[str] = None,
         language: str = "en",
     ) -> HarvestResult:
@@ -81,9 +110,6 @@ class Harvester:
         Returns:
             HarvestResult with extracted data and metadata
         """
-        import time
-        from datetime import datetime
-
         start_time = time.time()
 
         # Generate document ID if not provided
@@ -116,7 +142,8 @@ class Harvester:
     def harvest_file(
         self,
         source: Union[str, Path, bytes, BinaryIO],
-        doc_type: str = "invoice",
+        schema: Type[BaseModel],
+        doc_type: Optional[str] = None,
         document_id: Optional[str] = None,
         language: str = "en",
         filename: Optional[str] = None,
@@ -136,7 +163,8 @@ class Harvester:
 
         Args:
             source: File path, bytes, or file-like object
-            doc_type: Type of document (invoice, receipt, etc.)
+            schema: The output Pydantic BaseModel schema wanted
+            doc_type: Type of document (invoice, receipt, etc.) will default the schema name in lower case
             document_id: Unique identifier (auto-generated if not provided)
             language: Document language
             filename: Original filename (used when source is bytes/file-like)
@@ -146,21 +174,18 @@ class Harvester:
 
         Examples:
             >>> # From file path (str or Path)
-            >>> result = harvester.harvest_file("invoice.jpg")
+            >>> result = harvester.harvest_file("invoice.jpg", schema)
 
             >>> # From bytes
             >>> with open("invoice.jpg", "rb") as f:
             ...     data = f.read()
-            >>> result = harvester.harvest_file(data, filename="invoice.jpg")
+            >>> result = harvester.harvest_file(data, schema, filename="invoice.jpg")
 
             >>> # From file-like object
             >>> from io import BytesIO
             >>> buffer = BytesIO(image_data)
-            >>> result = harvester.harvest_file(buffer, filename="invoice.jpg")
+            >>> result = harvester.harvest_file(buffer, schema, filename="invoice.jpg")
         """
-        import time
-        from datetime import datetime
-
         start_time = time.time()
 
         # Detect input type and normalize to bytes + metadata
@@ -168,6 +193,9 @@ class Harvester:
         file_path_str: Optional[str] = None
         file_size: Optional[int] = None
         inferred_filename: Optional[str] = None
+
+        # Use provided doc_type or resolved it from gave schema
+        doc_type = doc_type or self.get_doc_type_from_schema(schema)
 
         if isinstance(source, (str, Path)):
             # Path-based input
@@ -377,7 +405,7 @@ class Harvester:
     def _harvest_image(
         self,
         image_bytes: bytes,
-        doc_type: str = "invoice",
+        doc_type: str,
         document_id: Optional[str] = None,
         language: str = "en",
         filename: Optional[str] = None,
@@ -395,13 +423,6 @@ class Harvester:
         Returns:
             HarvestResult with extracted data
         """
-        import json
-        import time
-
-        from anthropic import Anthropic
-
-        from ..schemas.base import ExtractionResult, ExtractionStrategy
-
         start_time = time.time()
 
         # Determine image media type from filename

@@ -1,5 +1,5 @@
 """
-LLM-based document parser using LangChain.
+LLM-based document parser using LangChain and Anthropic.
 
 Uses Claude Haiku (or other models) for extracting structured data from text.
 """
@@ -70,7 +70,7 @@ class LLMParser:
         self.llm = ChatAnthropic(
             model=model,
             anthropic_api_key=api_key,
-            temperature=0.0,  # Deterministic for data extraction
+            temperature=0.0,  # Deterministic for data extraction do not hallucanite
         )
 
         # Initialize Anthropic client for direct API access
@@ -126,12 +126,13 @@ class LLMParser:
 
         Args:
             text: Document text to extract from
-            doc_type: Type of document (invoice, receipt, etc.)
+            doc_type: Type of document (invoice, receipt, etc.), based on your use case.
 
         Returns:
             Prompt string
         """
         # Minimal prompt to save tokens
+        # TODO: Make this customer customisable with class, json, etc.
         if doc_type == "invoice":
             fields = "invoice_number, date, due_date, total_amount, currency, vendor_name, customer_name, line_items, tax_amount, subtotal"
         else:
@@ -139,12 +140,12 @@ class LLMParser:
 
         return f"""Extract structured data from this {doc_type}.
 
-Return JSON with fields: {fields}
+            Return JSON with fields: {fields}
 
-Document text:
-{text}
+            Document text:
+            {text}
 
-JSON:"""
+            JSON:"""
 
     def extract(
         self,
@@ -298,6 +299,7 @@ JSON:"""
         This is simpler but doesn't use structured output.
         Good for experimentation.
 
+        Might use this for experimentation with agentic AI @Koweez.
         Args:
             text: Text to extract from
             doc_type: Document type
