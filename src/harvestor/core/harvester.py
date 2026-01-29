@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from ..core.cost_tracker import cost_tracker
 from ..parsers.llm_parser import LLMParser
 from ..schemas.base import ExtractionResult, ExtractionStrategy, HarvestResult
+from ..schemas.prompt_builder import PromptBuilder
 
 
 class Harvester:
@@ -67,7 +68,8 @@ class Harvester:
         # Initialize LLM parser
         self.llm_parser = LLMParser(model=model, api_key=self.api_key)
 
-    def get_doc_type_from_schema(schema: type[BaseModel]) -> str:
+    @staticmethod
+    def get_doc_type_from_schema(schema: Type[BaseModel]) -> str:
         """
         Extract doc_type from schema class name.
 
@@ -75,7 +77,7 @@ class Harvester:
         IDDocumentOutput -> id_document
         CustomerReceiptData -> customer_receipt
         """
-        name = type(schema).__name__
+        name = schema.__name__
 
         # Remove common suffixes
         for suffix in ("Schema", "Output", "Data", "Model"):
@@ -92,7 +94,8 @@ class Harvester:
     def harvest_text(
         self,
         text: str,
-        doc_type: str,
+        schema: Type[BaseModel],
+        doc_type: Optional[str] = None,
         document_id: Optional[str] = None,
         language: str = "en",
     ) -> HarvestResult:
@@ -103,7 +106,8 @@ class Harvester:
 
         Args:
             text: Document text to extract from
-            doc_type: Type of document (invoice, receipt, etc.)
+            schema: Pydantic model defining the output structure
+            doc_type: Type of document (derived from schema name if not provided)
             document_id: Unique identifier for this document
             language: Document language (for future use)
 
@@ -112,13 +116,16 @@ class Harvester:
         """
         start_time = time.time()
 
+        # Use provided doc_type or derive from schema
+        doc_type = doc_type or self.get_doc_type_from_schema(schema)
+
         # Generate document ID if not provided
         if not document_id:
             document_id = f"doc_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-        # Extract using LLM
+        # Extract using LLM with schema
         extraction_result = self.llm_parser.extract(
-            text=text, doc_type=doc_type, document_id=document_id
+            text=text, schema=schema, doc_type=doc_type, document_id=document_id
         )
 
         total_time = time.time() - start_time
@@ -267,6 +274,7 @@ class Harvester:
                 # Image file - use vision API
                 result = self._harvest_image(
                     image_bytes=file_bytes,
+                    schema=schema,
                     doc_type=doc_type,
                     document_id=document_id,
                     language=language,
@@ -277,6 +285,7 @@ class Harvester:
                 text = self._extract_text_from_bytes(file_bytes, file_extension)
                 result = self.harvest_text(
                     text=text,
+                    schema=schema,
                     doc_type=doc_type,
                     document_id=document_id,
                     language=language,
@@ -405,6 +414,7 @@ class Harvester:
     def _harvest_image(
         self,
         image_bytes: bytes,
+        schema: Type[BaseModel],
         doc_type: str,
         document_id: Optional[str] = None,
         language: str = "en",
@@ -415,6 +425,7 @@ class Harvester:
 
         Args:
             image_bytes: Raw image data
+            schema: Pydantic model defining the output structure
             doc_type: Document type
             document_id: Document identifier
             language: Document language
@@ -439,40 +450,9 @@ class Harvester:
         # Encode image to base64
         image_b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
 
-        # Create extraction prompt based on document type
-        if doc_type == "invoice":
-            fields = """- invoice_number: The invoice number
-- date: Invoice date
-- due_date: Due date
-- po_number: Purchase order number
-- vendor_name: Vendor/seller name
-- vendor_address: Vendor address
-- vendor_email: Vendor email
-- vendor_gstin: Vendor GSTIN/tax ID
-- customer_name: Customer/buyer name
-- customer_address: Customer address
-- customer_email: Customer email
-- customer_phone: Customer phone
-- gstin: Customer GSTIN
-- line_items: Array of items with description, quantity, and price
-- subtotal: Subtotal amount
-- tax_amount: Tax amount with percentage
-- discount: Discount amount if any
-- total_amount: Total amount
-- currency: Currency code (EUR, USD, etc.)
-- bank_name: Bank name
-- bank_account: Bank account number
-- bank_swift: Bank SWIFT/BIC code
-- notes: Any special notes"""
-        else:
-            fields = "all relevant data fields"
-
-        prompt = f"""Extract structured data from this {doc_type} image.
-
-Return a JSON object with the following fields:
-{fields}
-
-Extract all available information. Return only the JSON object, no other text."""
+        # Create extraction prompt from schema
+        builder = PromptBuilder(schema)
+        prompt = builder.build_vision_prompt(doc_type)
 
         # Initialize Anthropic client
         client = Anthropic(api_key=self.api_key)
@@ -537,6 +517,10 @@ Extract all available information. Return only the JSON object, no other text.""
             else:
                 data = json.loads(response_text)
 
+            # Validate against schema
+            validated_data = schema(**data)
+            data = validated_data.model_dump()
+
             # Create extraction result
             extraction_result = ExtractionResult(
                 success=True,
@@ -595,7 +579,8 @@ Extract all available information. Return only the JSON object, no other text.""
     def harvest_batch(
         self,
         files: List[Union[str, Path]],
-        doc_type: str = "invoice",
+        schema: Type[BaseModel],
+        doc_type: Optional[str] = None,
         show_progress: bool = True,
     ) -> List[HarvestResult]:
         """
@@ -603,7 +588,8 @@ Extract all available information. Return only the JSON object, no other text.""
 
         Args:
             files: List of file paths to process
-            doc_type: Document type for all files
+            schema: Pydantic model defining the output structure
+            doc_type: Document type for all files (derived from schema if not provided)
             show_progress: Show progress bar
 
         Returns:
@@ -622,7 +608,9 @@ Extract all available information. Return only the JSON object, no other text.""
             iterator = files
 
         for file_source in iterator:
-            result = self.harvest_file(source=file_source, doc_type=doc_type)
+            result = self.harvest_file(
+                source=file_source, schema=schema, doc_type=doc_type
+            )
             results.append(result)
 
         return results
@@ -634,7 +622,8 @@ Extract all available information. Return only the JSON object, no other text.""
 
 def harvest(
     source: Union[str, Path, bytes, BinaryIO],
-    doc_type: str = "invoice",
+    schema: Type[BaseModel],
+    doc_type: Optional[str] = None,
     language: str = "en",
     model: str = "Claude Haiku 3",
     api_key: Optional[str] = None,
@@ -648,27 +637,30 @@ def harvest(
     Examples:
         ```python
         from harvestor import harvest
+        from harvestor.schemas import InvoiceData
 
         # From file path
-        result = harvest("invoice.pdf", doc_type="invoice")
+        result = harvest("invoice.pdf", schema=InvoiceData)
         print(f"Invoice #: {result.data.get('invoice_number')}")
         print(f"Total: ${result.data.get('total_amount')}")
         print(f"Cost: ${result.total_cost:.4f}")
 
-        # From bytes
-        with open("invoice.jpg", "rb") as f:
-            data = f.read()
-        result = harvest(data, filename="invoice.jpg")
+        # From bytes with custom schema
+        from pydantic import BaseModel, Field
 
-        # From file-like object
-        from io import BytesIO
-        buffer = BytesIO(image_data)
-        result = harvest(buffer, filename="invoice.jpg")
+        class ContractData(BaseModel):
+            parties: list[str] = Field(description="Contract parties")
+            value: float | None = Field(None, description="Contract value")
+
+        with open("contract.pdf", "rb") as f:
+            data = f.read()
+        result = harvest(data, schema=ContractData, filename="contract.pdf")
         ```
 
     Args:
         source: File path, bytes, or file-like object
-        doc_type: Document type
+        schema: Pydantic model defining the output structure
+        doc_type: Document type (derived from schema name if not provided)
         language: Document language
         model: LLM model to use
         api_key: API key (uses env var if not provided)
@@ -679,5 +671,9 @@ def harvest(
     """
     harvester = Harvester(api_key=api_key, model=model)
     return harvester.harvest_file(
-        source=source, doc_type=doc_type, language=language, filename=filename
+        source=source,
+        schema=schema,
+        doc_type=doc_type,
+        language=language,
+        filename=filename,
     )

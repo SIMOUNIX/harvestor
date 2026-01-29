@@ -2,6 +2,8 @@
 LLM-based document parser using LangChain and Anthropic.
 
 Uses Claude Haiku (or other models) for extracting structured data from text.
+
+Haiku is the cheapest :)
 """
 
 import json
@@ -15,23 +17,7 @@ from pydantic import BaseModel, ValidationError
 
 from ..core.cost_tracker import cost_tracker
 from ..schemas.base import ExtractionResult, ExtractionStrategy
-
-
-class InvoiceData(BaseModel):
-    """Default invoice schema for structured extraction."""
-
-    invoice_number: Optional[str] = None
-    date: Optional[str] = None
-    due_date: Optional[str] = None
-    total_amount: Optional[float] = None
-    currency: Optional[str] = None
-    vendor_name: Optional[str] = None
-    vendor_address: Optional[str] = None
-    customer_name: Optional[str] = None
-    customer_address: Optional[str] = None
-    line_items: Optional[list] = None
-    tax_amount: Optional[float] = None
-    subtotal: Optional[float] = None
+from ..schemas.prompt_builder import PromptBuilder
 
 
 class LLMParser:
@@ -40,7 +26,7 @@ class LLMParser:
 
     Features:
     - Uses Claude Haiku by default (cheapest)
-    - Structured output with Pydantic validation
+    - Structured output with Pydantic validation based on personnal wish
     - Automatic retry on validation errors
     - Cost tracking integration
     - Smart truncation for long documents
@@ -120,38 +106,26 @@ class LLMParser:
 
         return start + truncation_marker + end
 
-    def create_prompt(self, text: str, doc_type: str = "invoice") -> str:
+    def create_prompt(self, text: str, doc_type: str, schema: Type[BaseModel]) -> str:
         """
-        Create minimal prompt for extraction.
+        Create extraction prompt from schema.
 
         Args:
             text: Document text to extract from
-            doc_type: Type of document (invoice, receipt, etc.), based on your use case.
+            doc_type: Type of document (invoice, receipt, etc.)
+            schema: Pydantic model defining the output structure
 
         Returns:
-            Prompt string
+            Prompt string with schema-derived fields
         """
-        # Minimal prompt to save tokens
-        # TODO: Make this customer customisable with class, json, etc.
-        if doc_type == "invoice":
-            fields = "invoice_number, date, due_date, total_amount, currency, vendor_name, customer_name, line_items, tax_amount, subtotal"
-        else:
-            fields = "all relevant data fields"
-
-        return f"""Extract structured data from this {doc_type}.
-
-            Return JSON with fields: {fields}
-
-            Document text:
-            {text}
-
-            JSON:"""
+        builder = PromptBuilder(schema)
+        return builder.build_text_prompt(text, doc_type)
 
     def extract(
         self,
         text: str,
-        doc_type: str = "invoice",
-        schema: Type[BaseModel] = InvoiceData,
+        schema: Type[BaseModel],
+        doc_type: str = "document",
         document_id: Optional[str] = None,
     ) -> ExtractionResult:
         """
@@ -159,8 +133,8 @@ class LLMParser:
 
         Args:
             text: Text to extract from
-            doc_type: Document type
             schema: Pydantic model for structured output
+            doc_type: Document type (defaults to "document")
             document_id: Optional document ID for cost tracking
 
         Returns:
@@ -171,8 +145,8 @@ class LLMParser:
         # Truncate if needed
         text = self.truncate_text(text)
 
-        # Create prompt
-        prompt = self.create_prompt(text, doc_type)
+        # Create prompt from schema
+        prompt = self.create_prompt(text, doc_type, schema)
 
         # Try extraction with retries
         for attempt in range(self.max_retries):
@@ -291,7 +265,11 @@ class LLMParser:
             raise ValidationError(f"Failed to parse JSON: {str(e)}")
 
     def extract_with_langchain(
-        self, text: str, doc_type: str = "invoice", document_id: Optional[str] = None
+        self,
+        text: str,
+        schema: Type[BaseModel],
+        doc_type: str = "document",
+        document_id: Optional[str] = None,
     ) -> ExtractionResult:
         """
         Alternative extraction using LangChain chains.
@@ -302,6 +280,7 @@ class LLMParser:
         Might use this for experimentation with agentic AI @Koweez.
         Args:
             text: Text to extract from
+            schema: Pydantic model for structured output
             doc_type: Document type
             document_id: Optional document ID
 
@@ -313,9 +292,11 @@ class LLMParser:
         # Truncate if needed
         text = self.truncate_text(text)
 
-        # Create LangChain prompt template
+        # Create LangChain prompt template using schema
+        builder = PromptBuilder(schema)
         prompt_template = PromptTemplate(
-            input_variables=["text"], template=self.create_prompt("{text}", doc_type)
+            input_variables=["text"],
+            template=builder.build_text_prompt("{text}", doc_type),
         )
 
         try:
