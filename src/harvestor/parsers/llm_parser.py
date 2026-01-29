@@ -15,6 +15,7 @@ from langchain_core.prompts import PromptTemplate
 from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel, ValidationError
 
+from ..config import SUPPORTED_MODELS
 from ..core.cost_tracker import cost_tracker
 from ..schemas.base import ExtractionResult, ExtractionStrategy
 from ..schemas.prompt_builder import PromptBuilder
@@ -48,13 +49,19 @@ class LLMParser:
             max_retries: Maximum retry attempts for failed extractions
             max_input_chars: Maximum characters to send to LLM
         """
-        self.model = model
+        # Resolve model name to API model ID
+        if model not in SUPPORTED_MODELS:
+            raise ValueError(
+                f"Unsupported model: {model}. Supported models: {list(SUPPORTED_MODELS.keys())}"
+            )
+        self.model_name = model  # Friendly name for cost tracking
+        self.model = SUPPORTED_MODELS[model]["id"]  # API model ID
         self.max_retries = max_retries
         self.max_input_chars = max_input_chars
 
         # Initialize LangChain LLM
         self.llm = ChatAnthropic(
-            model=model,
+            model=self.model,
             anthropic_api_key=api_key,
             temperature=0.0,  # Deterministic for data extraction do not hallucanite
         )
@@ -227,7 +234,7 @@ class LLMParser:
         output_tokens = response.usage.output_tokens
 
         cost = cost_tracker.track_call(
-            model=self.model,
+            model=self.model_name,
             strategy=self.strategy,
             input_tokens=input_tokens,
             output_tokens=output_tokens,

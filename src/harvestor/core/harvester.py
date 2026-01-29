@@ -17,6 +17,7 @@ from typing import BinaryIO, List, Optional, Type, Union
 from anthropic import Anthropic
 from pydantic import BaseModel
 
+from ..config import SUPPORTED_MODELS
 from ..core.cost_tracker import cost_tracker
 from ..parsers.llm_parser import LLMParser
 from ..schemas.base import ExtractionResult, ExtractionStrategy, HarvestResult
@@ -58,7 +59,13 @@ class Harvester:
                 "Anthropic API key required. Set ANTHROPIC_API_KEY env var or pass api_key parameter."
             )
 
-        self.model = model
+        # Resolve model name to API model ID
+        if model not in SUPPORTED_MODELS:
+            raise ValueError(
+                f"Unsupported model: {model}. Supported models: {list(SUPPORTED_MODELS.keys())}"
+            )
+        self.model_name = model  # Friendly name for cost tracking
+        self.model = SUPPORTED_MODELS[model]["id"]  # API model ID
 
         # Set cost limits
         cost_tracker.set_limits(
@@ -494,7 +501,7 @@ class Harvester:
 
         # Track cost
         cost = cost_tracker.track_call(
-            model=self.model,
+            model=self.model_name,
             strategy=strategy,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
@@ -504,6 +511,7 @@ class Harvester:
 
         # Parse response
         response_text = response.content[0].text
+        print(f"got response {response_text}")
         processing_time = time.time() - start_time
 
         try:

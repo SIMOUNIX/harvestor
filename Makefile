@@ -21,10 +21,10 @@ test-quick: ## Run tests without coverage (faster)
 	uv run pytest -x --tb=short
 
 lint: ## Run linting checks
-	uv run ruff check --fix src/ tests/
+	uv run ruff check --fix src/ tests/ example.py
 
 format: ## Format code with Ruff
-	uv run ruff format src/ tests/
+	uv run ruff format src/ tests/ example.py
 
 clean: ## Clean up generated files
 	rm -rf .pytest_cache
