@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from harvestor import Harvester
+from harvestor import Harvester, InvoiceData
 from harvestor.schemas.base import HarvestResult
 
 
@@ -59,7 +59,9 @@ class TestTextExtraction:
         mock_anthropic.return_value = mock_client
 
         harvester = Harvester(api_key=api_key)
-        result = harvester.harvest_text(sample_invoice_text, doc_type="invoice")
+        result = harvester.harvest_text(
+            sample_invoice_text, schema=InvoiceData, doc_type="invoice"
+        )
 
         assert isinstance(result, HarvestResult)
         assert result.success is True
@@ -100,7 +102,7 @@ class TestTextExtraction:
 class TestBatchProcessing:
     """Test batch processing functionality."""
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_harvest_batch(
         self, mock_anthropic, tmp_path, mock_anthropic_response, api_key
     ):
@@ -118,14 +120,14 @@ class TestBatchProcessing:
 
         harvester = Harvester(api_key=api_key)
         results = harvester.harvest_batch(
-            files, doc_type="invoice", show_progress=False
+            files, schema=InvoiceData, doc_type="invoice", show_progress=False
         )
 
         assert len(results) == 3
         assert all(isinstance(r, HarvestResult) for r in results)
         assert all(r.success for r in results)
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_harvest_batch_with_failures(self, mock_anthropic, tmp_path, api_key):
         """Test batch processing handles failures gracefully."""
         mock_client = MagicMock()
@@ -145,7 +147,9 @@ class TestBatchProcessing:
         file2.write_bytes(b"fake_image_data")
 
         harvester = Harvester(api_key=api_key)
-        results = harvester.harvest_batch([file1, file2], show_progress=False)
+        results = harvester.harvest_batch(
+            [file1, file2], schema=InvoiceData, show_progress=False
+        )
 
         assert len(results) == 2
         assert results[0].success is False  # First failed
@@ -155,7 +159,7 @@ class TestBatchProcessing:
 class TestDocumentIDGeneration:
     """Test document ID generation."""
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_document_id_from_filename(
         self, mock_anthropic, tmp_path, mock_anthropic_response, api_key
     ):
@@ -168,11 +172,11 @@ class TestDocumentIDGeneration:
         file.write_bytes(b"fake_data")
 
         harvester = Harvester(api_key=api_key)
-        result = harvester.harvest_file(file)
+        result = harvester.harvest_file(file, schema=InvoiceData)
 
         assert result.document_id == "invoice_12345"
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_custom_document_id(
         self, mock_anthropic, tmp_path, mock_anthropic_response, api_key
     ):
@@ -185,7 +189,9 @@ class TestDocumentIDGeneration:
         file.write_bytes(b"fake_data")
 
         harvester = Harvester(api_key=api_key)
-        result = harvester.harvest_file(file, document_id="custom_id_123")
+        result = harvester.harvest_file(
+            file, schema=InvoiceData, document_id="custom_id_123"
+        )
 
         assert result.document_id == "custom_id_123"
 
@@ -193,7 +199,7 @@ class TestDocumentIDGeneration:
 class TestHarvestResult:
     """Test HarvestResult properties and methods."""
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_harvest_result_structure(
         self, mock_anthropic, tmp_path, mock_anthropic_response, api_key
     ):
@@ -206,7 +212,7 @@ class TestHarvestResult:
         file.write_bytes(b"fake_data")
 
         harvester = Harvester(api_key=api_key)
-        result = harvester.harvest_file(file)
+        result = harvester.harvest_file(file, schema=InvoiceData)
 
         # Check required fields
         assert hasattr(result, "success")
@@ -218,7 +224,7 @@ class TestHarvestResult:
         assert hasattr(result, "file_path")
         assert hasattr(result, "file_size_bytes")
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_harvest_result_cost_efficiency(
         self, mock_anthropic, tmp_path, mock_anthropic_response, api_key
     ):
@@ -231,7 +237,7 @@ class TestHarvestResult:
         file.write_bytes(b"fake_data")
 
         harvester = Harvester(api_key=api_key)
-        result = harvester.harvest_file(file)
+        result = harvester.harvest_file(file, schema=InvoiceData)
 
         efficiency = result.get_cost_efficiency()
         assert efficiency in ["FREE", "EXCELLENT", "GOOD", "ACCEPTABLE", "HIGH"]
@@ -249,7 +255,7 @@ class TestErrorHandling:
 
         assert "api key" in str(exc_info.value).lower()
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_api_error_returns_failed_result(self, mock_anthropic, tmp_path, api_key):
         """Test that API errors return failed HarvestResult."""
         mock_client = MagicMock()
@@ -260,7 +266,7 @@ class TestErrorHandling:
         file.write_bytes(b"fake_data")
 
         harvester = Harvester(api_key=api_key)
-        result = harvester.harvest_file(file)
+        result = harvester.harvest_file(file, schema=InvoiceData)
 
         assert result.success is False
         assert result.error is not None
@@ -269,7 +275,7 @@ class TestErrorHandling:
     def test_nonexistent_file_returns_error(self, api_key):
         """Test that non-existent file returns error result."""
         harvester = Harvester(api_key=api_key)
-        result = harvester.harvest_file("nonexistent_file.jpg")
+        result = harvester.harvest_file("nonexistent_file.jpg", schema=InvoiceData)
 
         assert result.success is False
         assert "not found" in result.error.lower()

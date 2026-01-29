@@ -8,13 +8,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from harvestor import InvoiceData
+
 
 @pytest.fixture
 def sample_invoice_image_path() -> Path:
     """Provide path to sample invoice image."""
-    actual_path = Path("data/uploads/keep_for_test.jpg")
-    if actual_path.exists():
-        return actual_path
+    return Path("data/uploads/keep_for_test.jpg")
 
 
 @pytest.fixture
@@ -79,12 +79,12 @@ def sample_invoice_data() -> Dict:
         "currency": "USD",
         "line_items": [
             {
-                "description": "Web Development Services",
+                "name": "Web Development Services",
                 "quantity": 40,
-                "price": 150.00,
+                "amount": 6000.00,
             },
-            {"description": "Cloud Hosting (Monthly)", "quantity": 1, "price": 500.00},
-            {"description": "SSL Certificate", "quantity": 1, "price": 100.00},
+            {"name": "Cloud Hosting (Monthly)", "quantity": 1, "amount": 500.00},
+            {"name": "SSL Certificate", "quantity": 1, "amount": 100.00},
         ],
     }
 
@@ -127,6 +127,12 @@ def mock_anthropic_client(mock_anthropic_response, monkeypatch):
 def api_key() -> str:
     """Provide test API key."""
     return "sk-ant-test-key-12345"
+
+
+@pytest.fixture
+def invoice_schema():
+    """Provide the default InvoiceData schema for testing."""
+    return InvoiceData
 
 
 @pytest.fixture

@@ -5,14 +5,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from harvestor import Harvester, harvest
+from harvestor import Harvester, harvest, InvoiceData
 from harvestor.schemas.base import HarvestResult
 
 
 class TestFilePathInput:
     """Test file path inputs (str and Path objects)."""
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_harvest_with_string_path(
         self,
         mock_anthropic,
@@ -26,14 +26,16 @@ class TestFilePathInput:
         mock_anthropic.return_value = mock_client
 
         harvester = Harvester(api_key=api_key)
-        result = harvester.harvest_file(str(sample_invoice_image_path))
+        result = harvester.harvest_file(
+            str(sample_invoice_image_path), schema=InvoiceData
+        )
 
         assert isinstance(result, HarvestResult)
         assert result.success is True
         assert result.file_path == str(sample_invoice_image_path)
         assert result.file_size_bytes > 0
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_harvest_with_path_object(
         self,
         mock_anthropic,
@@ -47,7 +49,7 @@ class TestFilePathInput:
         mock_anthropic.return_value = mock_client
 
         harvester = Harvester(api_key=api_key)
-        result = harvester.harvest_file(sample_invoice_image_path)
+        result = harvester.harvest_file(sample_invoice_image_path, schema=InvoiceData)
 
         assert isinstance(result, HarvestResult)
         assert result.success is True
@@ -56,7 +58,7 @@ class TestFilePathInput:
     def test_harvest_with_nonexistent_path(self, api_key):
         """Test harvesting with non-existent file path."""
         harvester = Harvester(api_key=api_key)
-        result = harvester.harvest_file("nonexistent_file.jpg")
+        result = harvester.harvest_file("nonexistent_file.jpg", schema=InvoiceData)
 
         assert result.success is False
         assert "not found" in result.error.lower()
@@ -65,7 +67,7 @@ class TestFilePathInput:
 class TestBytesInput:
     """Test raw bytes input."""
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_harvest_with_bytes(
         self, mock_anthropic, sample_invoice_bytes, mock_anthropic_response, api_key
     ):
@@ -75,14 +77,16 @@ class TestBytesInput:
         mock_anthropic.return_value = mock_client
 
         harvester = Harvester(api_key=api_key)
-        result = harvester.harvest_file(sample_invoice_bytes, filename="invoice.jpg")
+        result = harvester.harvest_file(
+            sample_invoice_bytes, schema=InvoiceData, filename="invoice.jpg"
+        )
 
         assert isinstance(result, HarvestResult)
         assert result.success is True
         assert result.file_size_bytes == len(sample_invoice_bytes)
         mock_client.messages.create.assert_called_once()
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_harvest_with_bytes_without_filename(
         self, mock_anthropic, sample_invoice_bytes, mock_anthropic_response, api_key
     ):
@@ -92,13 +96,13 @@ class TestBytesInput:
         mock_anthropic.return_value = mock_client
 
         harvester = Harvester(api_key=api_key)
-        result = harvester.harvest_file(sample_invoice_bytes)
+        result = harvester.harvest_file(sample_invoice_bytes, schema=InvoiceData)
 
         # Should fail because we can't determine file type without extension
         assert result.success is False
         assert "unsupported file type" in result.error.lower()
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_harvest_with_bytes_different_formats(
         self, mock_anthropic, mock_anthropic_response, api_key
     ):
@@ -112,14 +116,16 @@ class TestBytesInput:
         # Test different image formats
         formats = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
         for fmt in formats:
-            result = harvester.harvest_file(b"fake_image_data", filename=f"test{fmt}")
+            result = harvester.harvest_file(
+                b"fake_image_data", schema=InvoiceData, filename=f"test{fmt}"
+            )
             assert result.success is True, f"Failed for format {fmt}"
 
 
 class TestFileLikeInput:
     """Test file-like object inputs (BytesIO, opened files)."""
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_harvest_with_bytesio(
         self, mock_anthropic, sample_invoice_bytes, mock_anthropic_response, api_key
     ):
@@ -130,13 +136,15 @@ class TestFileLikeInput:
 
         buffer = io.BytesIO(sample_invoice_bytes)
         harvester = Harvester(api_key=api_key)
-        result = harvester.harvest_file(buffer, filename="invoice.jpg")
+        result = harvester.harvest_file(
+            buffer, schema=InvoiceData, filename="invoice.jpg"
+        )
 
         assert isinstance(result, HarvestResult)
         assert result.success is True
         assert result.file_size_bytes == len(sample_invoice_bytes)
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_harvest_with_opened_file(
         self,
         mock_anthropic,
@@ -152,14 +160,14 @@ class TestFileLikeInput:
         harvester = Harvester(api_key=api_key)
 
         with open(sample_invoice_image_path, "rb") as f:
-            result = harvester.harvest_file(f)
+            result = harvester.harvest_file(f, schema=InvoiceData)
 
         assert isinstance(result, HarvestResult)
         assert result.success is True
         # Should auto-detect filename from f.name
         assert result.document_id is not None
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_harvest_with_fileobj_without_name_attribute(
         self, mock_anthropic, sample_invoice_bytes, mock_anthropic_response, api_key
     ):
@@ -173,14 +181,16 @@ class TestFileLikeInput:
         harvester = Harvester(api_key=api_key)
 
         # Should work with explicit filename
-        result = harvester.harvest_file(buffer, filename="invoice.jpg")
+        result = harvester.harvest_file(
+            buffer, schema=InvoiceData, filename="invoice.jpg"
+        )
         assert result.success is True
 
 
 class TestInputTypeEquivalence:
     """Test that all input types produce equivalent results."""
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_all_input_types_produce_same_result(
         self,
         mock_anthropic,
@@ -196,19 +206,21 @@ class TestInputTypeEquivalence:
         harvester = Harvester(api_key=api_key)
 
         # Test with path
-        result_path = harvester.harvest_file(sample_invoice_image_path)
+        result_path = harvester.harvest_file(
+            sample_invoice_image_path, schema=InvoiceData
+        )
 
         # Test with bytes
         with open(sample_invoice_image_path, "rb") as f:
             image_bytes = f.read()
         result_bytes = harvester.harvest_file(
-            image_bytes, filename=sample_invoice_image_path.name
+            image_bytes, schema=InvoiceData, filename=sample_invoice_image_path.name
         )
 
         # Test with BytesIO
         buffer = io.BytesIO(image_bytes)
         result_fileobj = harvester.harvest_file(
-            buffer, filename=sample_invoice_image_path.name
+            buffer, schema=InvoiceData, filename=sample_invoice_image_path.name
         )
 
         # All should succeed
@@ -230,7 +242,7 @@ class TestInputTypeEquivalence:
 class TestConvenienceFunction:
     """Test the harvest() convenience function."""
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_harvest_function_with_path(
         self,
         mock_anthropic,
@@ -243,12 +255,12 @@ class TestConvenienceFunction:
         mock_client.messages.create.return_value = mock_anthropic_response
         mock_anthropic.return_value = mock_client
 
-        result = harvest(sample_invoice_image_path, api_key=api_key)
+        result = harvest(sample_invoice_image_path, schema=InvoiceData, api_key=api_key)
 
         assert isinstance(result, HarvestResult)
         assert result.success is True
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_harvest_function_with_bytes(
         self, mock_anthropic, sample_invoice_bytes, mock_anthropic_response, api_key
     ):
@@ -257,12 +269,17 @@ class TestConvenienceFunction:
         mock_client.messages.create.return_value = mock_anthropic_response
         mock_anthropic.return_value = mock_client
 
-        result = harvest(sample_invoice_bytes, filename="invoice.jpg", api_key=api_key)
+        result = harvest(
+            sample_invoice_bytes,
+            schema=InvoiceData,
+            filename="invoice.jpg",
+            api_key=api_key,
+        )
 
         assert isinstance(result, HarvestResult)
         assert result.success is True
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_harvest_function_with_fileobj(
         self, mock_anthropic, sample_invoice_fileobj, mock_anthropic_response, api_key
     ):
@@ -272,7 +289,10 @@ class TestConvenienceFunction:
         mock_anthropic.return_value = mock_client
 
         result = harvest(
-            sample_invoice_fileobj, filename="invoice.jpg", api_key=api_key
+            sample_invoice_fileobj,
+            schema=InvoiceData,
+            filename="invoice.jpg",
+            api_key=api_key,
         )
 
         assert isinstance(result, HarvestResult)
@@ -282,7 +302,7 @@ class TestConvenienceFunction:
 class TestImageFormatDetection:
     """Test image format detection and media type mapping."""
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_jpg_maps_to_jpeg_mime(
         self, mock_anthropic, sample_invoice_bytes, mock_anthropic_response, api_key
     ):
@@ -292,7 +312,9 @@ class TestImageFormatDetection:
         mock_anthropic.return_value = mock_client
 
         harvester = Harvester(api_key=api_key)
-        result = harvester.harvest_file(sample_invoice_bytes, filename="test.jpg")
+        result = harvester.harvest_file(
+            sample_invoice_bytes, schema=InvoiceData, filename="test.jpg"
+        )
 
         assert result.success is True
 
@@ -302,7 +324,7 @@ class TestImageFormatDetection:
         image_source = messages[0]["content"][0]["source"]
         assert image_source["media_type"] == "image/jpeg"
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     @pytest.mark.parametrize(
         "filename,expected_type",
         [
@@ -327,7 +349,9 @@ class TestImageFormatDetection:
         mock_anthropic.return_value = mock_client
 
         harvester = Harvester(api_key=api_key)
-        result = harvester.harvest_file(sample_invoice_bytes, filename=filename)
+        result = harvester.harvest_file(
+            sample_invoice_bytes, schema=InvoiceData, filename=filename
+        )
 
         assert result.success is True
 
@@ -343,7 +367,7 @@ class TestErrorHandling:
     def test_unsupported_source_type(self, api_key):
         """Test error handling for unsupported source type."""
         harvester = Harvester(api_key=api_key)
-        result = harvester.harvest_file(12345)  # Invalid type
+        result = harvester.harvest_file(12345, schema=InvoiceData)  # Invalid type
 
         assert result.success is False
         assert "unsupported source type" in result.error.lower()
@@ -351,12 +375,14 @@ class TestErrorHandling:
     def test_unsupported_file_format(self, api_key):
         """Test error handling for unsupported file format."""
         harvester = Harvester(api_key=api_key)
-        result = harvester.harvest_file(b"data", filename="test.exe")
+        result = harvester.harvest_file(
+            b"data", schema=InvoiceData, filename="test.exe"
+        )
 
         assert result.success is False
         assert "unsupported file type" in result.error.lower()
 
-    @patch("anthropic.Anthropic")
+    @patch("harvestor.core.harvester.Anthropic")
     def test_api_error_handling(self, mock_anthropic, sample_invoice_bytes, api_key):
         """Test error handling when API call fails."""
         mock_client = MagicMock()
@@ -364,7 +390,9 @@ class TestErrorHandling:
         mock_anthropic.return_value = mock_client
 
         harvester = Harvester(api_key=api_key)
-        result = harvester.harvest_file(sample_invoice_bytes, filename="test.jpg")
+        result = harvester.harvest_file(
+            sample_invoice_bytes, schema=InvoiceData, filename="test.jpg"
+        )
 
         assert result.success is False
         assert "extraction failed" in result.error.lower()
