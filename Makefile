@@ -13,7 +13,7 @@ test: ## Run all tests with verbose output
 	uv run pytest -v
 
 test-cov: ## Run tests with coverage report
-	pytest --cov=src/harvestor --cov-report=term-missing --cov-report=html
+	uv run pytest --cov=src/harvestor --cov-report=term-missing --cov-report=html
 	@echo ""
 	@echo "Coverage report generated in htmlcov/index.html"
 
@@ -21,10 +21,10 @@ test-quick: ## Run tests without coverage (faster)
 	uv run pytest -x --tb=short
 
 lint: ## Run linting checks
-	uv run ruff check --fix src/ tests/
+	uv run ruff check --fix src/ tests/ example.py
 
 format: ## Format code with Ruff
-	uv run ruff format src/ tests/
+	uv run ruff format src/ tests/ example.py
 
 clean: ## Clean up generated files
 	rm -rf .pytest_cache

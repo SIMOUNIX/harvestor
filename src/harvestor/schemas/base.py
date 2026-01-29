@@ -201,6 +201,7 @@ class HarvestResult:
             Cost: ${self.total_cost:.4f} ({self.get_cost_efficiency()})
             Time: {self.total_time:.2f}s
             Needs Review: {self.needs_review()}
+            Data: {self.data}
         """.strip()
 
 
