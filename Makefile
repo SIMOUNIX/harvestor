@@ -13,7 +13,7 @@ test: ## Run all tests with verbose output
 	uv run pytest -v
 
 test-cov: ## Run tests with coverage report
-	pytest --cov=src/harvestor --cov-report=term-missing --cov-report=html
+	uv run pytest --cov=src/harvestor --cov-report=term-missing --cov-report=html
 	@echo ""
 	@echo "Coverage report generated in htmlcov/index.html"
 
