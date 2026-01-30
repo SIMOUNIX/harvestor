@@ -1,11 +1,24 @@
 [project]
 name = "harvestor"
-version = "0.1.0"
-description = "Harvest intelligence from any document - AI-powered data extraction"
+version = "0.0.1"
+authors = [
+    { name="THUAUD Simon", email="sim.thuaud@gmail.com" }
+]
+description = "Harvest intelligence from any document - AI-powered data extraction and validation"
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
-license = {text = "MIT"}
-
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+keywords = ["ai", "llm", "data-extraction", "pdf", "document-processing", "ocr", "anthropic", "openai"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Text Processing :: General",
+]
 dependencies = [
     # Core LLM
     "langchain>=0.1.0",
@@ -37,18 +50,22 @@ dependencies = [
     "tqdm>=4.66.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/SIMOUNIX/harvestor"
+Repository = "https://github.com/SIMOUNIX/harvestor"
+Issues = "https://github.com/SIMOUNIX/harvestor/issues"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4.0",
     "pytest-mock>=3.12.0",
     "pytest-cov>=4.1.0",
-    "black>=23.12.0",
     "ruff>=0.1.0",
 ]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build >= 0.9.26, <0.10.0"]
+build-backend = "uv_build"
 
 [dependency-groups]
 dev = [

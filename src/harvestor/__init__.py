@@ -13,7 +13,7 @@ if sys.version_info < (3, 10):
 
 from .config import SUPPORTED_MODELS
 from .core.cost_tracker import cost_tracker
-from .core.harvester import Harvester, harvest
+from .core.harvestor import Harvestor, harvest
 from .schemas.base import (
     ExtractionResult,
     ExtractionStrategy,
@@ -26,7 +26,7 @@ __all__ = [
     "__version__",
     # Main API
     "harvest",
-    "Harvester",
+    "Harvestor",
     "cost_tracker",
     # Result types
     "ExtractionResult",
