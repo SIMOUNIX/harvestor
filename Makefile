@@ -1,4 +1,4 @@
-.PHONY: help install test test-cov test-quick lint format clean
+.PHONY: help install test test-cov test-quick lint format clean release release-test
 
 help: ## Show this help message
 	@echo "Usage: make [target]"
@@ -35,5 +35,18 @@ clean: ## Clean up generated files
 	rm -rf dist/
 	rm -rf build/
 	rm -rf *.egg-info/
+
+release: ## PyPI release (tag current version from pyproject.toml)
+	@test "$$(git branch --show-current)" = "main" || (echo "Error: must be on main branch" && exit 1)
+	@V=$$(grep -Po '^version = "\K[^"]+' pyproject.toml); \
+	git tag "v$$V" && \
+	echo "Tagged v$$V. Run: git push --tags"
+
+release-test: ## TestPyPI release (tag as pre-release)
+	@test "$$(git branch --show-current)" = "main" || (echo "Error: must be on main branch" && exit 1)
+	@V=$$(grep -Po '^version = "\K[^"]+' pyproject.toml); \
+	git tag "v$$V" && \
+	echo "Tagged v$$V. Run: git push --tags" && \
+	echo "Then create a PRE-RELEASE on GitHub"
 
 .DEFAULT_GOAL := help
