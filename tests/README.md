@@ -33,8 +33,8 @@ pytest tests/test_input_types.py
 # Test cost tracking
 pytest tests/test_cost_tracker.py
 
-# Test harvester core
-pytest tests/test_harvester.py
+# Test harvestor core
+pytest tests/test_harvestor.py
 ```
 
 ### Run Specific Test Classes or Methods
@@ -80,9 +80,9 @@ Tests for cost tracking and limits:
 - **TestCostTrackerReset**: Reset functionality
 - **TestCostTrackerSingleton**: Singleton pattern verification
 
-### `test_harvester.py`
-Tests for core Harvester functionality:
-- **TestHarvesterInitialization**: API key handling and configuration
+### `test_harvestor.py`
+Tests for core Harvestor functionality:
+- **TestHarvestorInitialization**: API key handling and configuration
 - **TestTextExtraction**: Text extraction from various formats
 - **TestBatchProcessing**: Batch document processing
 - **TestDocumentIDGeneration**: Document ID handling
@@ -108,7 +108,7 @@ Defined in `conftest.py`:
 Tests use mocking to avoid actual API calls:
 
 ```python
-@patch("harvestor.core.harvester.Anthropic")
+@patch("harvestor.core.harvestor.Anthropic")
 def test_example(mock_anthropic):
     mock_client = MagicMock()
     mock_client.messages.create.return_value = mock_response
@@ -158,15 +158,15 @@ class TestFeatureName:
 ```python
 def test_with_fixtures(sample_invoice_bytes, api_key):
     """Use fixtures for common test data."""
-    harvester = Harvester(api_key=api_key)
-    result = harvester.harvest_file(sample_invoice_bytes, filename="test.jpg")
+    harvestor = Harvestor(api_key=api_key)
+    result = harvestor.harvest_file(sample_invoice_bytes, filename="test.jpg")
     assert result.success
 ```
 
 ### Mock External Dependencies
 
 ```python
-@patch("harvestor.core.harvester.Anthropic")
+@patch("harvestor.core.harvestor.Anthropic")
 def test_with_mock(mock_anthropic, mock_anthropic_response):
     """Mock external API calls."""
     mock_client = MagicMock()
@@ -244,7 +244,7 @@ Make sure fixtures are defined in `conftest.py` or the test file.
 Check that you're patching the correct import path:
 ```python
 # Patch where it's used, not where it's defined
-@patch("harvestor.core.harvester.Anthropic")  # ✓ Correct
+@patch("harvestor.core.harvestor.Anthropic")  # ✓ Correct
 @patch("anthropic.Anthropic")                  # ✗ Wrong
 ```
 

@@ -2,7 +2,7 @@ from typing import Optional
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
-from harvestor import Harvester  # , harvest
+from harvestor import Harvestor  # , harvest
 import os
 
 load_dotenv()
@@ -22,7 +22,7 @@ class SimpleInoviceModelSchema(BaseModel):
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 
-h = Harvester(api_key=ANTHROPIC_API_KEY, model="Claude Haiku 3")
+h = Harvestor(api_key=ANTHROPIC_API_KEY, model="Claude Haiku 3")
 
 output = h.harvest_file(
     source="data/uploads/keep_for_test.jpg", schema=SimpleInoviceModelSchema

@@ -1,10 +1,14 @@
 [project]
 name = "harvestor"
-version = "0.1.0"
-description = "Harvest intelligence from any document - AI-powered data extraction"
+version = "0.0.1"
+authors = [
+    { name="THUAUD Simon", email="sim.thuaud@gmail.com" }
+]
+description = "Harvest intelligence from any document - AI-powered data extraction and validation"
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
 
 dependencies = [
     # Core LLM
@@ -47,8 +51,8 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build >= 0.9.26, <0.10.0"]
+build-backend = "uv_build"
 
 [dependency-groups]
 dev = [

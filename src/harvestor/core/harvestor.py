@@ -1,5 +1,5 @@
 """
-Main Harvester class for document data extraction.
+Main Harvestor class for document data extraction.
 
 This is the primary public API for Harvestor.
 """
@@ -24,7 +24,7 @@ from ..schemas.base import ExtractionResult, ExtractionStrategy, HarvestResult
 from ..schemas.prompt_builder import PromptBuilder
 
 
-class Harvester:
+class Harvestor:
     """
     Main document extraction class.
 
@@ -44,7 +44,7 @@ class Harvester:
         daily_cost_limit: Optional[float] = None,
     ):
         """
-        Initialize Harvester.
+        Initialize Harvestor.
 
         Args:
             api_key: Anthropic API key (uses ANTHROPIC_API_KEY env var if not provided)
@@ -188,17 +188,17 @@ class Harvester:
 
         Examples:
             >>> # From file path (str or Path)
-            >>> result = harvester.harvest_file("invoice.jpg", schema)
+            >>> result = harvestor.harvest_file("invoice.jpg", schema)
 
             >>> # From bytes
             >>> with open("invoice.jpg", "rb") as f:
             ...     data = f.read()
-            >>> result = harvester.harvest_file(data, schema, filename="invoice.jpg")
+            >>> result = harvestor.harvest_file(data, schema, filename="invoice.jpg")
 
             >>> # From file-like object
             >>> from io import BytesIO
             >>> buffer = BytesIO(image_data)
-            >>> result = harvester.harvest_file(buffer, schema, filename="invoice.jpg")
+            >>> result = harvestor.harvest_file(buffer, schema, filename="invoice.jpg")
         """
         start_time = time.time()
 
@@ -676,8 +676,8 @@ def harvest(
     Returns:
         HarvestResult with extracted data
     """
-    harvester = Harvester(api_key=api_key, model=model)
-    return harvester.harvest_file(
+    harvestor = Harvestor(api_key=api_key, model=model)
+    return harvestor.harvest_file(
         source=source,
         schema=schema,
         doc_type=doc_type,
