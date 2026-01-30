@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from ..config import SUPPORTED_MODELS
 from ..core.cost_tracker import cost_tracker
 from ..parsers.llm_parser import LLMParser
+from ..privacy.redactor import PIIRedactor
 from ..schemas.base import ExtractionResult, ExtractionStrategy, HarvestResult
 from ..schemas.prompt_builder import PromptBuilder
 
@@ -42,6 +43,8 @@ class Harvestor:
         model: str = "Claude Haiku 3",
         cost_limit_per_doc: float = 0.10,
         daily_cost_limit: Optional[float] = None,
+        redact_pii: bool = False,
+        pii_entities: Optional[List[str]] = None,
     ):
         """
         Initialize Harvestor.
@@ -51,6 +54,8 @@ class Harvestor:
             model: LLM model to use (default: Claude Haiku for cost optimization)
             cost_limit_per_doc: Maximum cost per document (default: $0.10)
             daily_cost_limit: Optional daily cost limit
+            redact_pii: Enable PII redaction before sending to LLM API
+            pii_entities: List of PII entity types to redact (uses defaults if None)
         """
         # Get API key
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
@@ -72,8 +77,15 @@ class Harvestor:
             daily_limit=daily_cost_limit, per_document_limit=cost_limit_per_doc
         )
 
+        # Initialize PII redactor if enabled
+        self._redactor: Optional[PIIRedactor] = None
+        if redact_pii:
+            self._redactor = PIIRedactor(entities=pii_entities)
+
         # Initialize LLM parser
-        self.llm_parser = LLMParser(model=model, api_key=self.api_key)
+        self.llm_parser = LLMParser(
+            model=model, api_key=self.api_key, redactor=self._redactor
+        )
 
     @staticmethod
     def get_doc_type_from_schema(schema: Type[BaseModel]) -> str:
@@ -635,6 +647,8 @@ def harvest(
     model: str = "Claude Haiku 3",
     api_key: Optional[str] = None,
     filename: Optional[str] = None,
+    redact_pii: bool = False,
+    pii_entities: Optional[List[str]] = None,
 ) -> HarvestResult:
     """
     One-liner function for quick extraction.
@@ -662,6 +676,9 @@ def harvest(
         with open("contract.pdf", "rb") as f:
             data = f.read()
         result = harvest(data, schema=ContractData, filename="contract.pdf")
+
+        # With PII redaction enabled
+        result = harvest("invoice.pdf", schema=InvoiceData, redact_pii=True)
         ```
 
     Args:
@@ -672,11 +689,18 @@ def harvest(
         model: LLM model to use
         api_key: API key (uses env var if not provided)
         filename: Original filename (required when source is bytes/file-like)
+        redact_pii: Enable PII redaction before sending to LLM API
+        pii_entities: List of PII entity types to redact
 
     Returns:
         HarvestResult with extracted data
     """
-    harvestor = Harvestor(api_key=api_key, model=model)
+    harvestor = Harvestor(
+        api_key=api_key,
+        model=model,
+        redact_pii=redact_pii,
+        pii_entities=pii_entities,
+    )
     return harvestor.harvest_file(
         source=source,
         schema=schema,

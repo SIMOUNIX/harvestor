@@ -22,7 +22,7 @@ class SimpleInoviceModelSchema(BaseModel):
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 
-h = Harvestor(api_key=ANTHROPIC_API_KEY, model="Claude Haiku 3")
+h = Harvestor(api_key=ANTHROPIC_API_KEY, model="Claude Haiku 3", redact_pii=True)
 
 output = h.harvest_file(
     source="data/uploads/keep_for_test.jpg", schema=SimpleInoviceModelSchema

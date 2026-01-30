@@ -6,9 +6,11 @@ Uses Claude Haiku (or other models) for extracting structured data from text.
 Haiku is the cheapest :)
 """
 
+from __future__ import annotations
+
 import json
 import time
-from typing import Any, Dict, Optional, Type
+from typing import TYPE_CHECKING, Any, Dict, Optional, Type
 
 from anthropic import Anthropic
 from langchain_core.prompts import PromptTemplate
@@ -19,6 +21,9 @@ from ..config import SUPPORTED_MODELS
 from ..core.cost_tracker import cost_tracker
 from ..schemas.base import ExtractionResult, ExtractionStrategy
 from ..schemas.prompt_builder import PromptBuilder
+
+if TYPE_CHECKING:
+    from ..privacy.redactor import PIIRedactor
 
 
 class LLMParser:
@@ -39,6 +44,7 @@ class LLMParser:
         api_key: Optional[str] = None,
         max_retries: int = 3,
         max_input_chars: int = 8000,
+        redactor: Optional[PIIRedactor] = None,
     ):
         """
         Initialize LLM parser.
@@ -48,7 +54,9 @@ class LLMParser:
             api_key: Anthropic API key (uses env var if not provided)
             max_retries: Maximum retry attempts for failed extractions
             max_input_chars: Maximum characters to send to LLM
+            redactor: Optional PIIRedactor for privacy-preserving extraction
         """
+        self._redactor = redactor
         # Resolve model name to API model ID
         if model not in SUPPORTED_MODELS:
             raise ValueError(
@@ -149,6 +157,14 @@ class LLMParser:
         """
         start_time = time.time()
 
+        # Redact PII if redactor is configured
+        placeholder_map = None
+        if self._redactor:
+            text, placeholder_map = self._redactor.redact(text)
+
+        print(f"placeholder_map {placeholder_map}")
+        print(f"text {text}")
+
         # Truncate if needed
         text = self.truncate_text(text)
 
@@ -162,12 +178,23 @@ class LLMParser:
                     prompt=prompt, schema=schema, document_id=document_id
                 )
 
+                # Restore PII in extracted data if redaction was used
+                extracted_data = result["data"]
+                if placeholder_map and self._redactor:
+                    extracted_data = self._redactor.restore(
+                        extracted_data, placeholder_map
+                    )
+
+                print(f"extracted data {extracted_data}")
+
                 processing_time = time.time() - start_time
 
                 return ExtractionResult(
                     success=True,
-                    data=result["data"],
-                    raw_text=text[:500],  # Store first 500 chars
+                    data=extracted_data,
+                    raw_text=text[
+                        :500
+                    ],  # Store first 500 chars (redacted if PII was removed)
                     strategy=self.strategy,
                     confidence=result.get("confidence", 0.85),
                     processing_time=processing_time,
