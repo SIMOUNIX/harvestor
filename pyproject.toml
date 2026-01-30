@@ -1,6 +1,6 @@
 [project]
 name = "harvestor"
-version = "0.0.1"
+version = "0.0.1-rc1"
 authors = [
     { name="THUAUD Simon", email="sim.thuaud@gmail.com" }
 ]
