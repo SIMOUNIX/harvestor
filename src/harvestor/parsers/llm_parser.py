@@ -262,7 +262,7 @@ class LLMParser:
             validated_data = schema(**data)
 
             return {
-                "data": validated_data.dict(),
+                "data": validated_data.model_dump(),
                 "cost": cost,
                 "tokens": input_tokens + output_tokens,
                 "confidence": 0.85,  # Default confidence for LLM extraction

@@ -13,11 +13,6 @@ from typing import Any, Dict, List, Optional
 class ExtractionStrategy(str, Enum):
     """Strategies for extracting data from documents."""
 
-    NATIVE_PDF = "native_pdf"  # Extract text directly from PDF
-    LAYOUT_ANALYSIS = "layout_analysis"  # Position-based extraction
-    TABLE_EXTRACTION = "table_extraction"  # Extract structured tables
-    KEYWORD_PROXIMITY = "keyword_proximity"  # Find values near keywords
-    OCR = "ocr"  # Tesseract OCR
     LLM_HAIKU = "llm_haiku"  # Claude Haiku
     LLM_SONNET = "llm_sonnet"  # Claude Sonnet
     LLM_GPT35 = "llm_gpt35"  # GPT-3.5-turbo
@@ -62,13 +57,8 @@ class ExtractionResult:
 
     def is_free_method(self) -> bool:
         """Check if this strategy incurred no API costs."""
-        return self.strategy in {
-            ExtractionStrategy.NATIVE_PDF,
-            ExtractionStrategy.LAYOUT_ANALYSIS,
-            ExtractionStrategy.TABLE_EXTRACTION,
-            ExtractionStrategy.KEYWORD_PROXIMITY,
-            ExtractionStrategy.OCR,
-        }
+        # All current strategies are LLM-based and have costs
+        return False
 
 
 @dataclass
