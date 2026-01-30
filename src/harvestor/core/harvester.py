@@ -511,7 +511,6 @@ class Harvester:
 
         # Parse response
         response_text = response.content[0].text
-        print(f"got response {response_text}")
         processing_time = time.time() - start_time
 
         try:

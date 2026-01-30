@@ -263,21 +263,7 @@ class CostTracker:
 
         # Calculate costs
         total_cost = sum(c.cost for c in recent_calls)
-        free_successes = len(
-            [
-                c
-                for c in recent_calls
-                if c.success
-                and c.strategy
-                in {
-                    ExtractionStrategy.NATIVE_PDF,
-                    ExtractionStrategy.LAYOUT_ANALYSIS,
-                    ExtractionStrategy.TABLE_EXTRACTION,
-                    ExtractionStrategy.KEYWORD_PROXIMITY,
-                    ExtractionStrategy.OCR,
-                }
-            ]
-        )
+        free_successes = 0
         llm_calls = len(
             [
                 c
