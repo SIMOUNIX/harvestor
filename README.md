@@ -2,7 +2,7 @@
 
 **AI-powered document data extraction toolkit**
 
-Extract structured data from documents (invoices, receipts, forms) using Claude's vision API.
+Extract structured data from documents (invoices, receipts, forms) using Claude's vision API. Easily integrate into your Python applications with flexible input options and built-in cost tracking.
 
 > ⚠️ **Early Development**: This project is in active development. Core functionality is working, but many features are still being built.
 
@@ -11,10 +11,8 @@ Extract structured data from documents (invoices, receipts, forms) using Claude'
 - ✅ **Vision API Integration**: Extract data from images (.jpg, .png, .gif, .webp)
 - ✅ **Flexible Input**: Accepts file paths, bytes, or file-like objects (like PIL, requests)
 - ✅ **Cost Tracking**: Built-in monitoring and limits for API usage
-- ✅ **Structured Output**: Returns Pydantic-validated data models
-- 🚧 **Text/PDF Support**: Basic text extraction (in progress)
-- 🚧 **OCR Fallback**: For scanned documents (planned)
-- 🚧 **Multi-strategy Extraction**: Cost-optimized cascade (planned)
+- ✅ **Structured Output**: Returns Pydantic-validated data models that you can define
+- 🚧 **Multi-strategy Extraction**: Cost-optimized cascade to reduce api calls (planned)
 
 ## Quick Start
 
@@ -27,7 +25,7 @@ cp .env.template .env
 # Add your Anthropic API key to .env
 
 # Run a test
-uv run python test_image_invoice.py
+uv run python example.py
 ```
 
 ## Basic Usage
@@ -50,6 +48,9 @@ result = harvest(data, filename="invoice.jpg")
 from io import BytesIO
 buffer = BytesIO(image_data)
 result = harvest(buffer, filename="invoice.jpg")
+
+# Display summary output
+print(result.to_summary())
 ```
 
 ## Testing
@@ -59,7 +60,7 @@ result = harvest(buffer, filename="invoice.jpg")
 uv sync --extra dev
 
 # Run tests
-pytest
+make test
 
 # Run with coverage
 make test-cov
@@ -67,7 +68,7 @@ make test-cov
 
 ## Requirements
 
-- Python 3.10-3.13
+- Python 3.13
 - Anthropic API key (for Claude vision API)
 
 ## Citation
