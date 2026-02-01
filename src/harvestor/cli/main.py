@@ -7,6 +7,9 @@ import json
 import sys
 from pathlib import Path
 
+from harvestor import harvest
+from harvestor.schemas.defaults import InvoiceData, ReceiptData
+
 
 def build_parser():
     parser = argparse.ArgumentParser(
@@ -46,7 +49,6 @@ def build_parser():
 
 def get_schema(schema_name: str):
     """Resolve schema name to actual schema class."""
-    from harvestor.schemas.defaults import InvoiceData, ReceiptData
 
     schemas = {
         "InvoiceData": InvoiceData,
@@ -73,8 +75,6 @@ def main():
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
-
-    from harvestor import harvest
 
     result = harvest(
         source=args.file_path,
