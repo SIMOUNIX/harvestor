@@ -2,6 +2,7 @@
 Harvestor - Harvest intelligence from any document
 
 Extract structured data from any document with AI-powered extraction.
+Supports multiple LLM providers: Anthropic, OpenAI, and Ollama.
 """
 
 __version__ = "0.1.0"
@@ -14,6 +15,20 @@ if sys.version_info < (3, 10):
 from .config import SUPPORTED_MODELS
 from .core.cost_tracker import cost_tracker
 from .core.harvestor import Harvestor, harvest
+from .providers import (
+    DEFAULT_MODEL,
+    MODELS,
+    PROVIDERS,
+    AnthropicProvider,
+    BaseLLMProvider,
+    CompletionResult,
+    ModelInfo,
+    OllamaProvider,
+    OpenAIProvider,
+    get_provider,
+    list_models,
+    list_providers,
+)
 from .schemas.base import (
     ExtractionResult,
     ExtractionStrategy,
@@ -39,4 +54,17 @@ __all__ = [
     "LineItem",
     # Config
     "SUPPORTED_MODELS",
+    "MODELS",
+    "DEFAULT_MODEL",
+    # Providers
+    "PROVIDERS",
+    "BaseLLMProvider",
+    "CompletionResult",
+    "ModelInfo",
+    "AnthropicProvider",
+    "OpenAIProvider",
+    "OllamaProvider",
+    "get_provider",
+    "list_models",
+    "list_providers",
 ]

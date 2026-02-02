@@ -4,24 +4,19 @@ Main Harvestor class for document data extraction.
 This is the primary public API for Harvestor.
 """
 
-import base64
 import io
-import json
-import os
 import re
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import BinaryIO, List, Optional, Type, Union
 
-from anthropic import Anthropic
 from pydantic import BaseModel
 
-from ..config import SUPPORTED_MODELS
 from ..core.cost_tracker import cost_tracker
 from ..parsers.llm_parser import LLMParser
-from ..schemas.base import ExtractionResult, ExtractionStrategy, HarvestResult
-from ..schemas.prompt_builder import PromptBuilder
+from ..providers import DEFAULT_MODEL
+from ..schemas.base import HarvestResult
 
 
 class Harvestor:
@@ -30,8 +25,8 @@ class Harvestor:
 
     Features:
     - Extract structured data from documents
-    - Multiple extraction strategies (LLM)
-    - Cost optimization (LLM fallback for now)
+    - Multi-provider support (Anthropic, OpenAI, Ollama)
+    - Cost optimization
     - Batch processing support
     - Progress tracking and reporting
     """
@@ -39,41 +34,32 @@ class Harvestor:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "Claude Haiku 3",
+        model: str = DEFAULT_MODEL,
         cost_limit_per_doc: float = 0.10,
         daily_cost_limit: Optional[float] = None,
+        base_url: Optional[str] = None,
     ):
         """
         Initialize Harvestor.
 
         Args:
-            api_key: Anthropic API key (uses ANTHROPIC_API_KEY env var if not provided)
-            model: LLM model to use (default: Claude Haiku for cost optimization)
+            api_key: API key (uses env var if not provided, not needed for Ollama)
+            model: Model to use (e.g., 'claude-haiku', 'gpt-4o-mini', 'llama3')
             cost_limit_per_doc: Maximum cost per document (default: $0.10)
             daily_cost_limit: Optional daily cost limit
+            base_url: Optional base URL override for the provider
         """
-        # Get API key
-        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
-        if not self.api_key:
-            raise ValueError(
-                "Anthropic API key required. Set ANTHROPIC_API_KEY env var or pass api_key parameter."
-            )
-
-        # Resolve model name to API model ID
-        if model not in SUPPORTED_MODELS:
-            raise ValueError(
-                f"Unsupported model: {model}. Supported models: {list(SUPPORTED_MODELS.keys())}"
-            )
-        self.model_name = model  # Friendly name for cost tracking
-        self.model = SUPPORTED_MODELS[model]["id"]  # API model ID
+        self.model_name = model
+        self.api_key = api_key
+        self.base_url = base_url
 
         # Set cost limits
         cost_tracker.set_limits(
             daily_limit=daily_cost_limit, per_document_limit=cost_limit_per_doc
         )
 
-        # Initialize LLM parser
-        self.llm_parser = LLMParser(model=model, api_key=self.api_key)
+        # Initialize LLM parser (handles provider selection)
+        self.llm_parser = LLMParser(model=model, api_key=api_key, base_url=base_url)
 
     @staticmethod
     def get_doc_type_from_schema(schema: Type[BaseModel]) -> str:
@@ -93,7 +79,6 @@ class Harvestor:
                 break
 
         # Convert CamelCase to snake_case
-        # "IDDocument" -> "id_document"
         name = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
 
         return name
@@ -108,8 +93,6 @@ class Harvestor:
     ) -> HarvestResult:
         """
         Extract structured data from text.
-
-        This is the simplest method - just LLM extraction on provided text.
 
         Args:
             text: Document text to extract from
@@ -137,7 +120,6 @@ class Harvestor:
 
         total_time = time.time() - start_time
 
-        # Build harvest result
         return HarvestResult(
             success=extraction_result.success,
             document_id=document_id,
@@ -165,7 +147,7 @@ class Harvestor:
         """
         Extract structured data from a file, bytes, or file-like object.
 
-        This method accepts multiple input types for maximum flexibility:
+        Accepts multiple input types:
         - str/Path: File path to read from disk
         - bytes: Raw file content as bytes
         - BinaryIO: File-like object (e.g., io.BytesIO, opened file)
@@ -177,28 +159,14 @@ class Harvestor:
 
         Args:
             source: File path, bytes, or file-like object
-            schema: The output Pydantic BaseModel schema wanted
-            doc_type: Type of document (invoice, receipt, etc.) will default the schema name in lower case
+            schema: The output Pydantic BaseModel schema
+            doc_type: Type of document (derived from schema name if not provided)
             document_id: Unique identifier (auto-generated if not provided)
             language: Document language
             filename: Original filename (used when source is bytes/file-like)
 
         Returns:
             HarvestResult with extracted data
-
-        Examples:
-            >>> # From file path (str or Path)
-            >>> result = harvestor.harvest_file("invoice.jpg", schema)
-
-            >>> # From bytes
-            >>> with open("invoice.jpg", "rb") as f:
-            ...     data = f.read()
-            >>> result = harvestor.harvest_file(data, schema, filename="invoice.jpg")
-
-            >>> # From file-like object
-            >>> from io import BytesIO
-            >>> buffer = BytesIO(image_data)
-            >>> result = harvestor.harvest_file(buffer, schema, filename="invoice.jpg")
         """
         start_time = time.time()
 
@@ -208,7 +176,7 @@ class Harvestor:
         file_size: Optional[int] = None
         inferred_filename: Optional[str] = None
 
-        # Use provided doc_type or resolved it from gave schema
+        # Use provided doc_type or derive from schema
         doc_type = doc_type or self.get_doc_type_from_schema(schema)
 
         if isinstance(source, (str, Path)):
@@ -231,12 +199,10 @@ class Harvestor:
             file_size = file_path.stat().st_size
             document_id = document_id or file_path.stem
 
-            # Read file content for image processing
             with open(file_path, "rb") as f:
                 file_bytes = f.read()
 
         elif isinstance(source, bytes):
-            # Bytes input
             file_bytes = source
             file_size = len(source)
             inferred_filename = (
@@ -245,11 +211,9 @@ class Harvestor:
             document_id = document_id or Path(inferred_filename).stem
 
         elif hasattr(source, "read"):
-            # File-like object (BinaryIO)
             file_bytes = source.read()
             file_size = len(file_bytes)
 
-            # Try to get filename from file object
             if hasattr(source, "name"):
                 inferred_filename = Path(source.name).name
             else:
@@ -269,16 +233,11 @@ class Harvestor:
                 total_time=time.time() - start_time,
             )
 
-        # Use provided filename or inferred one
         final_filename = filename or inferred_filename
-
-        # Determine file type from filename
         file_extension = Path(final_filename).suffix.lower()
 
         try:
-            # Route to appropriate extraction method based on file type
             if file_extension in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
-                # Image file - use vision API
                 result = self._harvest_image(
                     image_bytes=file_bytes,
                     schema=schema,
@@ -288,7 +247,6 @@ class Harvestor:
                     filename=final_filename,
                 )
             elif file_extension in [".txt", ".pdf"]:
-                # Text-based file - extract text first
                 text = self._extract_text_from_bytes(file_bytes, file_extension)
                 result = self.harvest_text(
                     text=text,
@@ -309,7 +267,6 @@ class Harvestor:
                     total_time=time.time() - start_time,
                 )
 
-            # Add file metadata to result
             if file_path_str:
                 result.file_path = file_path_str
             result.file_size_bytes = file_size
@@ -328,71 +285,12 @@ class Harvestor:
                 total_time=time.time() - start_time,
             )
 
-    def _extract_text_from_file(self, file_path: Path) -> str:
-        """
-        Extract text from file based on type.
-
-        Args:
-            file_path: Path to file
-
-        Returns:
-            Extracted text
-
-        Raises:
-            ValueError: If file type is not supported
-        """
-        suffix = file_path.suffix.lower()
-
-        if suffix == ".txt":
-            # Plain text file
-            with open(file_path, "r", encoding="utf-8") as f:
-                return f.read()
-
-        elif suffix == ".pdf":
-            # PDF file - use pdfplumber for native text extraction
-            try:
-                import pdfplumber
-
-                text_parts = []
-                with pdfplumber.open(file_path) as pdf:
-                    for page in pdf.pages:
-                        page_text = page.extract_text()
-                        if page_text:
-                            text_parts.append(page_text)
-
-                if not text_parts:
-                    raise ValueError("No text found in PDF (might need OCR)")
-
-                return "\n\n".join(text_parts)
-
-            except ImportError:
-                raise ValueError(
-                    "pdfplumber not installed. Install with: pip install pdfplumber"
-                )
-
-        else:
-            raise ValueError(f"Unsupported file type: {suffix}. Supported: .txt, .pdf")
-
     def _extract_text_from_bytes(self, file_bytes: bytes, file_extension: str) -> str:
-        """
-        Extract text from bytes based on file type.
-
-        Args:
-            file_bytes: Raw file content
-            file_extension: File extension (e.g., '.txt', '.pdf')
-
-        Returns:
-            Extracted text
-
-        Raises:
-            ValueError: If file type is not supported
-        """
+        """Extract text from bytes based on file type."""
         if file_extension == ".txt":
-            # Plain text file
             return file_bytes.decode("utf-8")
 
         elif file_extension == ".pdf":
-            # PDF file - use pdfplumber
             try:
                 import pdfplumber
 
@@ -427,23 +325,10 @@ class Harvestor:
         language: str = "en",
         filename: Optional[str] = None,
     ) -> HarvestResult:
-        """
-        Extract structured data from an image using Claude's vision API.
-
-        Args:
-            image_bytes: Raw image data
-            schema: Pydantic model defining the output structure
-            doc_type: Document type
-            document_id: Document identifier
-            language: Document language
-            filename: Original filename for determining image type
-
-        Returns:
-            HarvestResult with extracted data
-        """
+        """Extract structured data from an image using vision API."""
         start_time = time.time()
 
-        # Determine image media type from filename
+        # Determine media type from filename
         if filename:
             extension = Path(filename).suffix.lower().replace(".", "")
             if extension == "jpg":
@@ -451,137 +336,33 @@ class Harvestor:
             else:
                 media_type = f"image/{extension}"
         else:
-            # Default to jpeg
             media_type = "image/jpeg"
 
-        # Encode image to base64
-        image_b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
-
-        # Create extraction prompt from schema
-        builder = PromptBuilder(schema)
-        prompt = builder.build_vision_prompt(doc_type)
-
-        # Initialize Anthropic client
-        client = Anthropic(api_key=self.api_key)
-
-        # Call vision API
-        response = client.messages.create(
-            model=self.model,
-            max_tokens=2048,
-            temperature=0.0,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media_type,
-                                "data": image_b64,
-                            },
-                        },
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ],
-        )
-
-        # Extract token usage
-        input_tokens = response.usage.input_tokens
-        output_tokens = response.usage.output_tokens
-
-        # Determine strategy based on model
-        if "haiku" in self.model.lower():
-            strategy = ExtractionStrategy.LLM_HAIKU
-        elif "sonnet" in self.model.lower():
-            strategy = ExtractionStrategy.LLM_SONNET
-        else:
-            strategy = ExtractionStrategy.LLM_HAIKU
-
-        # Track cost
-        cost = cost_tracker.track_call(
-            model=self.model_name,
-            strategy=strategy,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
+        # Use LLMParser's vision extraction
+        extraction_result = self.llm_parser.extract_vision(
+            image_data=image_bytes,
+            schema=schema,
+            doc_type=doc_type,
             document_id=document_id,
-            success=True,
+            media_type=media_type,
         )
 
-        # Parse response
-        response_text = response.content[0].text
         processing_time = time.time() - start_time
 
-        try:
-            # Extract JSON from response
-            json_start = response_text.find("{")
-            json_end = response_text.rfind("}") + 1
-
-            if json_start >= 0 and json_end > json_start:
-                json_str = response_text[json_start:json_end]
-                data = json.loads(json_str)
-            else:
-                data = json.loads(response_text)
-
-            # Validate against schema
-            validated_data = schema(**data)
-            data = validated_data.model_dump()
-
-            # Create extraction result
-            extraction_result = ExtractionResult(
-                success=True,
-                data=data,
-                raw_text=response_text[:500],
-                strategy=strategy,
-                confidence=0.85,
-                processing_time=processing_time,
-                cost=cost,
-                tokens_used=input_tokens + output_tokens,
-                metadata={
-                    "model": self.model,
-                    "media_type": media_type,
-                    "vision_api": True,
-                },
-            )
-
-            # Build harvest result
-            return HarvestResult(
-                success=True,
-                document_id=document_id,
-                document_type=doc_type,
-                data=data,
-                extraction_results=[extraction_result],
-                final_strategy=strategy,
-                final_confidence=0.85,
-                total_cost=cost,
-                cost_breakdown={strategy.value: cost},
-                total_time=processing_time,
-                language=language,
-            )
-
-        except json.JSONDecodeError as e:
-            return HarvestResult(
-                success=False,
-                document_id=document_id,
-                document_type=doc_type,
-                data={},
-                error=f"Failed to parse JSON response: {str(e)}",
-                total_cost=cost,
-                total_time=processing_time,
-                language=language,
-            )
-        except Exception as e:
-            return HarvestResult(
-                success=False,
-                document_id=document_id,
-                document_type=doc_type,
-                data={},
-                error=f"Vision API extraction failed: {str(e)}",
-                total_cost=cost,
-                total_time=processing_time,
-                language=language,
-            )
+        return HarvestResult(
+            success=extraction_result.success,
+            document_id=document_id,
+            document_type=doc_type,
+            data=extraction_result.data,
+            extraction_results=[extraction_result],
+            final_strategy=extraction_result.strategy,
+            final_confidence=extraction_result.confidence,
+            total_cost=extraction_result.cost,
+            cost_breakdown={extraction_result.strategy.value: extraction_result.cost},
+            total_time=processing_time,
+            error=extraction_result.error,
+            language=language,
+        )
 
     def harvest_batch(
         self,
@@ -596,7 +377,7 @@ class Harvestor:
         Args:
             files: List of file paths to process
             schema: Pydantic model defining the output structure
-            doc_type: Document type for all files (derived from schema if not provided)
+            doc_type: Document type for all files
             show_progress: Show progress bar
 
         Returns:
@@ -632,36 +413,30 @@ def harvest(
     schema: Type[BaseModel],
     doc_type: Optional[str] = None,
     language: str = "en",
-    model: str = "Claude Haiku 3",
+    model: str = DEFAULT_MODEL,
     api_key: Optional[str] = None,
     filename: Optional[str] = None,
+    base_url: Optional[str] = None,
 ) -> HarvestResult:
     """
     One-liner function for quick extraction.
 
-    Accepts file paths, bytes, or file-like objects for maximum flexibility.
+    Accepts file paths, bytes, or file-like objects.
 
     Examples:
         ```python
         from harvestor import harvest
         from harvestor.schemas import InvoiceData
 
-        # From file path
+        # From file path with default model (claude-haiku)
         result = harvest("invoice.pdf", schema=InvoiceData)
         print(f"Invoice #: {result.data.get('invoice_number')}")
-        print(f"Total: ${result.data.get('total_amount')}")
-        print(f"Cost: ${result.total_cost:.4f}")
 
-        # From bytes with custom schema
-        from pydantic import BaseModel, Field
+        # With OpenAI
+        result = harvest("invoice.jpg", schema=InvoiceData, model="gpt-4o-mini")
 
-        class ContractData(BaseModel):
-            parties: list[str] = Field(description="Contract parties")
-            value: float | None = Field(None, description="Contract value")
-
-        with open("contract.pdf", "rb") as f:
-            data = f.read()
-        result = harvest(data, schema=ContractData, filename="contract.pdf")
+        # With local Ollama
+        result = harvest("invoice.txt", schema=InvoiceData, model="llama3")
         ```
 
     Args:
@@ -669,14 +444,15 @@ def harvest(
         schema: Pydantic model defining the output structure
         doc_type: Document type (derived from schema name if not provided)
         language: Document language
-        model: LLM model to use
+        model: Model to use (default: claude-haiku)
         api_key: API key (uses env var if not provided)
         filename: Original filename (required when source is bytes/file-like)
+        base_url: Optional base URL override
 
     Returns:
         HarvestResult with extracted data
     """
-    harvestor = Harvestor(api_key=api_key, model=model)
+    harvestor = Harvestor(api_key=api_key, model=model, base_url=base_url)
     return harvestor.harvest_file(
         source=source,
         schema=schema,

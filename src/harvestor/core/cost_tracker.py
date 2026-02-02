@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from ..schemas.base import CostReport, ExtractionStrategy
-from ..config import SUPPORTED_MODELS
 
 
 @dataclass
@@ -107,14 +106,15 @@ class CostTracker:
         self, model: str, input_tokens: int, output_tokens: int
     ) -> float:
         """Calculate cost for a given API call."""
-        if model not in SUPPORTED_MODELS:
-            # Unknown model, use conservative estimate (GPT-4 pricing)
-            raise ModelNotSupported(f"Model {model} is not supported.")
-        else:
-            pricing = SUPPORTED_MODELS[model]
+        from ..providers import MODELS
 
-        input_cost = (input_tokens / 1_000_000) * pricing["input"]
-        output_cost = (output_tokens / 1_000_000) * pricing["output"]
+        if model not in MODELS:
+            # Unknown model (possibly Ollama custom), assume free
+            return 0.0
+
+        pricing = MODELS[model]
+        input_cost = (input_tokens / 1_000_000) * pricing["input_cost"]
+        output_cost = (output_tokens / 1_000_000) * pricing["output_cost"]
 
         return input_cost + output_cost
 
@@ -263,19 +263,12 @@ class CostTracker:
 
         # Calculate costs
         total_cost = sum(c.cost for c in recent_calls)
-        free_successes = 0
-        llm_calls = len(
-            [
-                c
-                for c in recent_calls
-                if c.strategy
-                in {
-                    ExtractionStrategy.LLM_HAIKU,
-                    ExtractionStrategy.LLM_SONNET,
-                    ExtractionStrategy.LLM_GPT35,
-                }
-            ]
+        free_successes = sum(
+            1
+            for c in recent_calls
+            if c.strategy == ExtractionStrategy.LLM_OLLAMA and c.success
         )
+        llm_calls = len(recent_calls)
 
         # Cost by strategy
         cost_by_strategy: Dict[str, float] = {}

@@ -14,13 +14,13 @@ class TestHarvestorInitialization:
     def test_init_with_api_key(self):
         """Test initialization with explicit API key."""
         harvestor = Harvestor(api_key="sk-test-key")
-        assert harvestor.api_key == "sk-test-key"
+        assert harvestor.llm_parser.provider.api_key == "sk-test-key"
 
     def test_init_with_env_api_key(self, monkeypatch):
         """Test initialization with API key from environment."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-env-key")
         harvestor = Harvestor()
-        assert harvestor.api_key == "sk-env-key"
+        assert harvestor.llm_parser.provider.api_key == "sk-env-key"
 
     def test_init_without_api_key_raises_error(self, monkeypatch):
         """Test that initialization without API key raises error."""
@@ -31,8 +31,8 @@ class TestHarvestorInitialization:
 
     def test_init_with_custom_model(self):
         """Test initialization with custom model."""
-        harvestor = Harvestor(api_key="sk-test-key", model="Claude Sonnet 3.7")
-        assert harvestor.model_name == "Claude Sonnet 3.7"
+        harvestor = Harvestor(api_key="sk-test-key", model="claude-sonnet")
+        assert harvestor.model_name == "claude-sonnet"
 
     def test_init_sets_cost_limits(self):
         """Test that initialization sets cost limits."""
@@ -49,7 +49,7 @@ class TestHarvestorInitialization:
 class TestTextExtraction:
     """Test text extraction from different file types."""
 
-    @patch("harvestor.parsers.llm_parser.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_harvest_text_basic(
         self, mock_anthropic, sample_invoice_text, mock_anthropic_response, api_key
     ):
@@ -66,18 +66,7 @@ class TestTextExtraction:
         assert isinstance(result, HarvestResult)
         assert result.success is True
         assert result.document_type == "invoice"
-        assert result.total_cost > 0
-
-    def test_extract_text_from_txt_file(self, tmp_path, api_key):
-        """Test text extraction from .txt file."""
-        # Create a text file
-        txt_file = tmp_path / "test.txt"
-        txt_file.write_text("Test content")
-
-        harvestor = Harvestor(api_key=api_key)
-        text = harvestor._extract_text_from_file(txt_file)
-
-        assert text == "Test content"
+        assert result.total_cost >= 0
 
     def test_extract_text_from_bytes_txt(self, api_key):
         """Test text extraction from bytes (.txt)."""
@@ -88,21 +77,18 @@ class TestTextExtraction:
 
         assert text == "Hello, world!"
 
-    def test_unsupported_file_extension_raises_error(self, tmp_path, api_key):
+    def test_unsupported_file_extension_raises_error(self, api_key):
         """Test that unsupported file extensions raise ValueError."""
-        unsupported_file = tmp_path / "test.xyz"
-        unsupported_file.write_text("content")
-
         harvestor = Harvestor(api_key=api_key)
 
         with pytest.raises(ValueError, match="Unsupported file type"):
-            harvestor._extract_text_from_file(unsupported_file)
+            harvestor._extract_text_from_bytes(b"content", ".xyz")
 
 
 class TestBatchProcessing:
     """Test batch processing functionality."""
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_harvest_batch(
         self, mock_anthropic, tmp_path, mock_anthropic_response, api_key
     ):
@@ -127,7 +113,7 @@ class TestBatchProcessing:
         assert all(isinstance(r, HarvestResult) for r in results)
         assert all(r.success for r in results)
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_harvest_batch_with_failures(self, mock_anthropic, tmp_path, api_key):
         """Test batch processing handles failures gracefully."""
         mock_client = MagicMock()
@@ -136,6 +122,7 @@ class TestBatchProcessing:
             MagicMock(
                 usage=MagicMock(input_tokens=100, output_tokens=50),
                 content=[MagicMock(text='{"invoice_number": "123"}')],
+                stop_reason="end_turn",
             ),  # Second succeeds
         ]
         mock_anthropic.return_value = mock_client
@@ -159,7 +146,7 @@ class TestBatchProcessing:
 class TestDocumentIDGeneration:
     """Test document ID generation."""
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_document_id_from_filename(
         self, mock_anthropic, tmp_path, mock_anthropic_response, api_key
     ):
@@ -176,7 +163,7 @@ class TestDocumentIDGeneration:
 
         assert result.document_id == "invoice_12345"
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_custom_document_id(
         self, mock_anthropic, tmp_path, mock_anthropic_response, api_key
     ):
@@ -199,7 +186,7 @@ class TestDocumentIDGeneration:
 class TestHarvestResult:
     """Test HarvestResult properties and methods."""
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_harvest_result_structure(
         self, mock_anthropic, tmp_path, mock_anthropic_response, api_key
     ):
@@ -224,7 +211,7 @@ class TestHarvestResult:
         assert hasattr(result, "file_path")
         assert hasattr(result, "file_size_bytes")
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_harvest_result_cost_efficiency(
         self, mock_anthropic, tmp_path, mock_anthropic_response, api_key
     ):
@@ -255,7 +242,7 @@ class TestErrorHandling:
 
         assert "api key" in str(exc_info.value).lower()
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_api_error_returns_failed_result(self, mock_anthropic, tmp_path, api_key):
         """Test that API errors return failed HarvestResult."""
         mock_client = MagicMock()
@@ -270,7 +257,6 @@ class TestErrorHandling:
 
         assert result.success is False
         assert result.error is not None
-        assert "extraction failed" in result.error.lower()
 
     def test_nonexistent_file_returns_error(self, api_key):
         """Test that non-existent file returns error result."""

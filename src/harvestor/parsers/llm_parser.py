@@ -1,22 +1,18 @@
 """
-LLM-based document parser using LangChain and Anthropic.
+LLM-based document parser using provider abstraction.
 
-Uses Claude Haiku (or other models) for extracting structured data from text.
-
-Haiku is the cheapest :)
+Supports multiple LLM providers (Anthropic, OpenAI, Ollama) for extracting
+structured data from text.
 """
 
 import json
 import time
 from typing import Any, Dict, Optional, Type
 
-from anthropic import Anthropic
-from langchain_core.prompts import PromptTemplate
-from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel, ValidationError
 
-from ..config import SUPPORTED_MODELS
 from ..core.cost_tracker import cost_tracker
+from ..providers import DEFAULT_MODEL, BaseLLMProvider, get_provider
 from ..schemas.base import ExtractionResult, ExtractionStrategy
 from ..schemas.prompt_builder import PromptBuilder
 
@@ -26,8 +22,8 @@ class LLMParser:
     LLM-based parser for extracting structured data from text.
 
     Features:
-    - Uses Claude Haiku by default (cheapest)
-    - Structured output with Pydantic validation based on personnal wish
+    - Multi-provider support (Anthropic, OpenAI, Ollama)
+    - Structured output with Pydantic validation
     - Automatic retry on validation errors
     - Cost tracking integration
     - Smart truncation for long documents
@@ -35,49 +31,47 @@ class LLMParser:
 
     def __init__(
         self,
-        model: str = "Claude Haiku 3",
+        model: str = DEFAULT_MODEL,
         api_key: Optional[str] = None,
         max_retries: int = 3,
         max_input_chars: int = 8000,
+        base_url: Optional[str] = None,
     ):
         """
         Initialize LLM parser.
 
         Args:
-            model: Model to use (default: Claude Haiku)
-            api_key: Anthropic API key (uses env var if not provided)
+            model: Model to use (e.g., 'claude-haiku', 'gpt-4o-mini', 'llama3')
+            api_key: API key (uses env var if not provided, not needed for Ollama)
             max_retries: Maximum retry attempts for failed extractions
             max_input_chars: Maximum characters to send to LLM
+            base_url: Optional base URL override
         """
-        # Resolve model name to API model ID
-        if model not in SUPPORTED_MODELS:
-            raise ValueError(
-                f"Unsupported model: {model}. Supported models: {list(SUPPORTED_MODELS.keys())}"
-            )
-        self.model_name = model  # Friendly name for cost tracking
-        self.model = SUPPORTED_MODELS[model]["id"]  # API model ID
+        self.model_name = model
         self.max_retries = max_retries
         self.max_input_chars = max_input_chars
 
-        # Initialize LangChain LLM
-        self.llm = ChatAnthropic(
-            model=self.model,
-            anthropic_api_key=api_key,
-            temperature=0.0,  # Deterministic for data extraction do not hallucanite
+        # Get provider for this model
+        self.provider: BaseLLMProvider = get_provider(
+            model=model, api_key=api_key, base_url=base_url
         )
 
-        # Initialize Anthropic client for direct API access
-        self.anthropic_client = Anthropic(api_key=api_key)
+        # Get model info for cost tracking
+        self.model_info = self.provider.get_model_info()
 
-        # Determine strategy based on model
-        if "haiku" in model.lower():
-            self.strategy = ExtractionStrategy.LLM_HAIKU
-        elif "sonnet" in model.lower():
-            self.strategy = ExtractionStrategy.LLM_SONNET
-        elif "gpt" in model.lower():
-            self.strategy = ExtractionStrategy.LLM_GPT35
-        else:
-            self.strategy = ExtractionStrategy.LLM_HAIKU
+        # Determine strategy based on provider
+        self.strategy = self._get_strategy()
+
+    def _get_strategy(self) -> ExtractionStrategy:
+        """Determine extraction strategy based on provider."""
+        provider_name = self.model_info.provider
+        if provider_name == "anthropic":
+            return ExtractionStrategy.LLM_ANTHROPIC
+        elif provider_name == "openai":
+            return ExtractionStrategy.LLM_OPENAI
+        elif provider_name == "ollama":
+            return ExtractionStrategy.LLM_OLLAMA
+        return ExtractionStrategy.LLM_ANTHROPIC
 
     def truncate_text(self, text: str, max_chars: Optional[int] = None) -> str:
         """
@@ -148,9 +142,11 @@ class LLMParser:
             ExtractionResult with extracted data
         """
         start_time = time.time()
+        original_length = len(text)
 
         # Truncate if needed
         text = self.truncate_text(text)
+        was_truncated = len(text) < original_length
 
         # Create prompt from schema
         prompt = self.create_prompt(text, doc_type, schema)
@@ -158,7 +154,7 @@ class LLMParser:
         # Try extraction with retries
         for attempt in range(self.max_retries):
             try:
-                result = self._extract_with_anthropic(
+                result = self._extract_with_provider(
                     prompt=prompt, schema=schema, document_id=document_id
                 )
 
@@ -167,25 +163,24 @@ class LLMParser:
                 return ExtractionResult(
                     success=True,
                     data=result["data"],
-                    raw_text=text[:500],  # Store first 500 chars
+                    raw_text=text[:500],
                     strategy=self.strategy,
                     confidence=result.get("confidence", 0.85),
                     processing_time=processing_time,
                     cost=result["cost"],
                     tokens_used=result["tokens"],
                     metadata={
-                        "model": self.model,
+                        "model": self.model_info.model_id,
+                        "provider": self.model_info.provider,
                         "attempt": attempt + 1,
-                        "truncated": len(text) < len(text),
+                        "truncated": was_truncated,
                     },
                 )
 
             except ValidationError as e:
                 if attempt < self.max_retries - 1:
-                    # Retry with error feedback
                     continue
                 else:
-                    # Final attempt failed
                     processing_time = time.time() - start_time
                     return ExtractionResult(
                         success=False,
@@ -207,11 +202,21 @@ class LLMParser:
                     error=f"Extraction failed: {str(e)}",
                 )
 
-    def _extract_with_anthropic(
+        # Should not reach here, but handle edge case
+        return ExtractionResult(
+            success=False,
+            data={},
+            strategy=self.strategy,
+            confidence=0.0,
+            processing_time=time.time() - start_time,
+            error="Extraction failed: max retries exceeded",
+        )
+
+    def _extract_with_provider(
         self, prompt: str, schema: Type[BaseModel], document_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Extract using Anthropic API with structured output.
+        Extract using the configured provider.
 
         Args:
             prompt: Prompt text
@@ -221,33 +226,31 @@ class LLMParser:
         Returns:
             Dict with data, cost, and tokens
         """
-        # Call Anthropic API
-        response = self.anthropic_client.messages.create(
-            model=self.model,
+        # Call provider
+        result = self.provider.complete(
+            prompt=prompt,
             max_tokens=2048,
             temperature=0.0,
-            messages=[{"role": "user", "content": prompt}],
         )
 
-        # Extract tokens and calculate cost
-        input_tokens = response.usage.input_tokens
-        output_tokens = response.usage.output_tokens
+        if not result.success:
+            raise RuntimeError(result.error or "Provider returned unsuccessful result")
 
+        # Track cost
         cost = cost_tracker.track_call(
             model=self.model_name,
             strategy=self.strategy,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
             document_id=document_id,
             success=True,
         )
 
         # Parse response
-        response_text = response.content[0].text
+        response_text = result.content
 
         # Try to extract JSON from response
         try:
-            # Find JSON in response (might have explanatory text)
             json_start = response_text.find("{")
             json_end = response_text.rfind("}") + 1
 
@@ -255,7 +258,6 @@ class LLMParser:
                 json_str = response_text[json_start:json_end]
                 data = json.loads(json_str)
             else:
-                # Try parsing entire response as JSON
                 data = json.loads(response_text)
 
             # Validate against schema
@@ -264,87 +266,119 @@ class LLMParser:
             return {
                 "data": validated_data.model_dump(),
                 "cost": cost,
-                "tokens": input_tokens + output_tokens,
-                "confidence": 0.85,  # Default confidence for LLM extraction
+                "tokens": result.total_tokens,
+                "confidence": 0.85,
             }
 
         except json.JSONDecodeError as e:
             raise ValidationError(f"Failed to parse JSON: {str(e)}")
 
-    def extract_with_langchain(
+    def extract_vision(
         self,
-        text: str,
+        image_data: bytes,
         schema: Type[BaseModel],
         doc_type: str = "document",
         document_id: Optional[str] = None,
+        media_type: str = "image/jpeg",
     ) -> ExtractionResult:
         """
-        Alternative extraction using LangChain chains.
+        Extract structured data from an image using vision API.
 
-        This is simpler but doesn't use structured output.
-        Good for experimentation.
-
-        Might use this for experimentation with agentic AI @Koweez.
         Args:
-            text: Text to extract from
+            image_data: Raw image bytes
             schema: Pydantic model for structured output
             doc_type: Document type
-            document_id: Optional document ID
+            document_id: Optional document ID for cost tracking
+            media_type: Image MIME type
 
         Returns:
-            ExtractionResult
+            ExtractionResult with extracted data
         """
         start_time = time.time()
 
-        # Truncate if needed
-        text = self.truncate_text(text)
-
-        # Create LangChain prompt template using schema
-        builder = PromptBuilder(schema)
-        prompt_template = PromptTemplate(
-            input_variables=["text"],
-            template=builder.build_text_prompt("{text}", doc_type),
-        )
-
-        try:
-            # Use LangChain LLM
-            result = self.llm.predict(prompt_template.format(text=text))
-
-            # Parse JSON response
-            json_start = result.find("{")
-            json_end = result.rfind("}") + 1
-
-            if json_start >= 0 and json_end > json_start:
-                json_str = result[json_start:json_end]
-                data = json.loads(json_str)
-            else:
-                data = json.loads(result)
-
-            processing_time = time.time() - start_time
-
-            # Note: We don't have token counts with LangChain predict
-            # This is a limitation of using the simplified API
-            estimated_cost = 0.02  # Rough estimate
-
-            return ExtractionResult(
-                success=True,
-                data=data,
-                raw_text=text[:500],
-                strategy=self.strategy,
-                confidence=0.80,
-                processing_time=processing_time,
-                cost=estimated_cost,
-                tokens_used=0,  # Unknown with LangChain
-                warnings=["Using LangChain predict - token counts unavailable"],
-            )
-
-        except Exception as e:
-            processing_time = time.time() - start_time
+        if not self.provider.supports_vision():
             return ExtractionResult(
                 success=False,
                 data={},
                 strategy=self.strategy,
                 confidence=0.0,
+                processing_time=time.time() - start_time,
+                error=f"Model {self.model_name} does not support vision",
+            )
+
+        # Create vision prompt
+        builder = PromptBuilder(schema)
+        prompt = builder.build_vision_prompt(doc_type)
+
+        try:
+            result = self.provider.complete_vision(
+                prompt=prompt,
+                image_data=image_data,
+                media_type=media_type,
+                max_tokens=2048,
+                temperature=0.0,
+            )
+
+            if not result.success:
+                raise RuntimeError(result.error or "Vision API failed")
+
+            # Track cost
+            cost = cost_tracker.track_call(
+                model=self.model_name,
+                strategy=self.strategy,
+                input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens,
+                document_id=document_id,
+                success=True,
+            )
+
+            # Parse JSON response
+            response_text = result.content
+            json_start = response_text.find("{")
+            json_end = response_text.rfind("}") + 1
+
+            if json_start >= 0 and json_end > json_start:
+                json_str = response_text[json_start:json_end]
+                data = json.loads(json_str)
+            else:
+                data = json.loads(response_text)
+
+            validated_data = schema(**data)
+
+            processing_time = time.time() - start_time
+
+            return ExtractionResult(
+                success=True,
+                data=validated_data.model_dump(),
+                raw_text=response_text[:500],
+                strategy=self.strategy,
+                confidence=0.85,
                 processing_time=processing_time,
-                error=f"LangChain extraction failed: {str(e)}",
+                cost=cost,
+                tokens_used=result.total_tokens,
+                metadata={
+                    "model": self.model_info.model_id,
+                    "provider": self.model_info.provider,
+                    "vision": True,
+                    "media_type": media_type,
+                },
+            )
+
+        except json.JSONDecodeError as e:
+            return ExtractionResult(
+                success=False,
+                data={},
+                strategy=self.strategy,
+                confidence=0.0,
+                processing_time=time.time() - start_time,
+                error=f"Failed to parse JSON response: {str(e)}",
+            )
+        except Exception as e:
+            return ExtractionResult(
+                success=False,
+                data={},
+                strategy=self.strategy,
+                confidence=0.0,
+                processing_time=time.time() - start_time,
+                error=f"Vision extraction failed: {str(e)}",
             )

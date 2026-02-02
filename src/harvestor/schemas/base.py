@@ -13,9 +13,14 @@ from typing import Any, Dict, List, Optional
 class ExtractionStrategy(str, Enum):
     """Strategies for extracting data from documents."""
 
-    LLM_HAIKU = "llm_haiku"  # Claude Haiku
-    LLM_SONNET = "llm_sonnet"  # Claude Sonnet
-    LLM_GPT35 = "llm_gpt35"  # GPT-3.5-turbo
+    LLM_ANTHROPIC = "llm_anthropic"
+    LLM_OPENAI = "llm_openai"
+    LLM_OLLAMA = "llm_ollama"
+
+    # Legacy aliases (for backwards compatibility)
+    LLM_HAIKU = "llm_anthropic"
+    LLM_SONNET = "llm_anthropic"
+    LLM_GPT35 = "llm_openai"
 
 
 @dataclass
@@ -32,8 +37,8 @@ class ExtractionResult:
     confidence: float = 0.0  # 0.0 to 1.0
     processing_time: float = 0.0  # seconds
 
-    # Cost tracking
-    cost: float = 0.0  # USD -> for llm calls
+    # Cost tracking (USD)
+    cost: float = 0.0
     tokens_used: int = 0
 
     # Error handling
@@ -63,9 +68,9 @@ class ExtractionResult:
 
 @dataclass
 class ValidationResult:
-    """Result from validation checks. Determine is the document is legit.
+    """Result from validation checks.
 
-    Will be implemented later on.
+    Determines if the document is legitimate. Will be implemented later.
     """
 
     # Core validation
