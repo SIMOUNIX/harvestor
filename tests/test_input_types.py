@@ -12,7 +12,7 @@ from harvestor.schemas.base import HarvestResult
 class TestFilePathInput:
     """Test file path inputs (str and Path objects)."""
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_harvest_with_string_path(
         self,
         mock_anthropic,
@@ -35,7 +35,7 @@ class TestFilePathInput:
         assert result.file_path == str(sample_invoice_image_path)
         assert result.file_size_bytes > 0
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_harvest_with_path_object(
         self,
         mock_anthropic,
@@ -67,7 +67,7 @@ class TestFilePathInput:
 class TestBytesInput:
     """Test raw bytes input."""
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_harvest_with_bytes(
         self, mock_anthropic, sample_invoice_bytes, mock_anthropic_response, api_key
     ):
@@ -86,7 +86,7 @@ class TestBytesInput:
         assert result.file_size_bytes == len(sample_invoice_bytes)
         mock_client.messages.create.assert_called_once()
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_harvest_with_bytes_without_filename(
         self, mock_anthropic, sample_invoice_bytes, mock_anthropic_response, api_key
     ):
@@ -102,7 +102,7 @@ class TestBytesInput:
         assert result.success is False
         assert "unsupported file type" in result.error.lower()
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_harvest_with_bytes_different_formats(
         self, mock_anthropic, mock_anthropic_response, api_key
     ):
@@ -125,7 +125,7 @@ class TestBytesInput:
 class TestFileLikeInput:
     """Test file-like object inputs (BytesIO, opened files)."""
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_harvest_with_bytesio(
         self, mock_anthropic, sample_invoice_bytes, mock_anthropic_response, api_key
     ):
@@ -144,7 +144,7 @@ class TestFileLikeInput:
         assert result.success is True
         assert result.file_size_bytes == len(sample_invoice_bytes)
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_harvest_with_opened_file(
         self,
         mock_anthropic,
@@ -167,7 +167,7 @@ class TestFileLikeInput:
         # Should auto-detect filename from f.name
         assert result.document_id is not None
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_harvest_with_fileobj_without_name_attribute(
         self, mock_anthropic, sample_invoice_bytes, mock_anthropic_response, api_key
     ):
@@ -190,7 +190,7 @@ class TestFileLikeInput:
 class TestInputTypeEquivalence:
     """Test that all input types produce equivalent results."""
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_all_input_types_produce_same_result(
         self,
         mock_anthropic,
@@ -242,7 +242,7 @@ class TestInputTypeEquivalence:
 class TestConvenienceFunction:
     """Test the harvest() convenience function."""
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_harvest_function_with_path(
         self,
         mock_anthropic,
@@ -260,7 +260,7 @@ class TestConvenienceFunction:
         assert isinstance(result, HarvestResult)
         assert result.success is True
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_harvest_function_with_bytes(
         self, mock_anthropic, sample_invoice_bytes, mock_anthropic_response, api_key
     ):
@@ -279,7 +279,7 @@ class TestConvenienceFunction:
         assert isinstance(result, HarvestResult)
         assert result.success is True
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_harvest_function_with_fileobj(
         self, mock_anthropic, sample_invoice_fileobj, mock_anthropic_response, api_key
     ):
@@ -302,7 +302,7 @@ class TestConvenienceFunction:
 class TestImageFormatDetection:
     """Test image format detection and media type mapping."""
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_jpg_maps_to_jpeg_mime(
         self, mock_anthropic, sample_invoice_bytes, mock_anthropic_response, api_key
     ):
@@ -324,7 +324,7 @@ class TestImageFormatDetection:
         image_source = messages[0]["content"][0]["source"]
         assert image_source["media_type"] == "image/jpeg"
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     @pytest.mark.parametrize(
         "filename,expected_type",
         [
@@ -382,7 +382,7 @@ class TestErrorHandling:
         assert result.success is False
         assert "unsupported file type" in result.error.lower()
 
-    @patch("harvestor.core.harvestor.Anthropic")
+    @patch("harvestor.providers.anthropic.Anthropic")
     def test_api_error_handling(self, mock_anthropic, sample_invoice_bytes, api_key):
         """Test error handling when API call fails."""
         mock_client = MagicMock()

@@ -103,6 +103,7 @@ def mock_anthropic_response(sample_invoice_data):
     class MockResponse:
         usage = MockUsage()
         content = [MockContent()]
+        stop_reason = "end_turn"
 
     return MockResponse()
 
