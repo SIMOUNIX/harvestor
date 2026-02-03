@@ -188,7 +188,7 @@ class HarvestResult:
         status = "SUCCESS" if self.success else "FAILED"
         strategy = self.final_strategy.value if self.final_strategy else "N/A"
 
-        return f"""
+        summary = f"""
             Harvest Result: {status}
             Document: {self.document_id} ({self.document_type})
             Strategy: {strategy}
@@ -198,6 +198,13 @@ class HarvestResult:
             Needs Review: {self.needs_review()}
             Data: {self.data}
         """.strip()
+
+        if self.error:
+            summary += f"""
+            Error: {self.error}
+        """
+
+        return summary
 
 
 @dataclass

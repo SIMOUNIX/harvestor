@@ -6,7 +6,7 @@ import base64
 import os
 from typing import Optional
 
-import httpx
+from ollama import generate, Client, list as list_models
 
 from .base import BaseLLMProvider, CompletionResult, ModelInfo
 
@@ -66,17 +66,25 @@ class OllamaProvider(BaseLLMProvider):
         if model not in OLLAMA_MODELS:
             # Allow custom models not in the predefined list
             self.model_config = {
-                "id": f"{model}:latest" if ":" not in model else model,
+                "id": f"{model}:latest"
+                if ":" not in model
+                else model,  # allow models like ministral-3:3b
                 "input_cost": 0.0,
                 "output_cost": 0.0,
-                "supports_vision": False,
+                "supports_vision": True,
                 "context_window": 8192,
             }
         else:
             self.model_config = OLLAMA_MODELS[model]
 
+        self.client = None  # if self.client -> using ollama cloud
+        if model.endswith("cloud"):
+            self.client = Client(
+                host="https://ollama.com",
+                headers={"Authorization": "Bearer " + os.environ.get("OLLAMA_API_KEY")},
+            )
+
         self.model_id = self.model_config["id"]
-        self.client = httpx.Client(base_url=base_url, timeout=120.0)
 
     def complete(
         self,
@@ -85,20 +93,12 @@ class OllamaProvider(BaseLLMProvider):
         temperature: float = 0.0,
     ) -> CompletionResult:
         try:
-            response = self.client.post(
-                "/api/generate",
-                json={
-                    "model": self.model_id,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {
-                        "temperature": temperature,
-                        "num_predict": max_tokens,
-                    },
-                },
+            data = generate(
+                model=self.model_id,
+                prompt=prompt,
+                stream=False,
+                options={"temperature": temperature, "num_predict": max_tokens},
             )
-            response.raise_for_status()
-            data = response.json()
 
             return CompletionResult(
                 success=True,
@@ -112,13 +112,6 @@ class OllamaProvider(BaseLLMProvider):
                 },
             )
 
-        except httpx.ConnectError:
-            return CompletionResult(
-                success=False,
-                content="",
-                model=self.model_id,
-                error=f"Cannot connect to Ollama at {self.base_url}. Is Ollama running?",
-            )
         except Exception as e:
             return CompletionResult(
                 success=False,
@@ -146,27 +139,32 @@ class OllamaProvider(BaseLLMProvider):
         try:
             image_b64 = base64.standard_b64encode(image_data).decode("utf-8")
 
-            response = self.client.post(
-                "/api/generate",
-                json={
-                    "model": self.model_id,
-                    "prompt": prompt,
-                    "images": [image_b64],
-                    "stream": False,
-                    "options": {
-                        "temperature": temperature,
-                        "num_predict": max_tokens,
-                    },
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
+            if self.client:
+                data = self.client.generate(
+                    model=self.model,
+                    prompt=prompt,
+                    images=[image_b64],
+                    stream=False,
+                    options={"temperature": temperature, "num_predict": max_tokens},
+                )
+            else:
+                data = generate(
+                    model=self.model,
+                    prompt=prompt,
+                    images=[image_b64],
+                    stream=False,
+                    options={"temperature": temperature, "num_predict": max_tokens},
+                )
 
             return CompletionResult(
                 success=True,
                 content=data.get("response", ""),
-                input_tokens=data.get("prompt_eval_count", 0),
-                output_tokens=data.get("eval_count", 0),
+                input_tokens=0
+                if data.get("prompt_eval_count") is None
+                else data["prompt_eval_count"],
+                output_tokens=0
+                if data.get("eval_count") is None
+                else data["eval_count"],
                 model=self.model_id,
                 metadata={
                     "total_duration": data.get("total_duration"),
@@ -174,13 +172,6 @@ class OllamaProvider(BaseLLMProvider):
                 },
             )
 
-        except httpx.ConnectError:
-            return CompletionResult(
-                success=False,
-                content="",
-                model=self.model_id,
-                error=f"Cannot connect to Ollama at {self.base_url}. Is Ollama running?",
-            )
         except Exception as e:
             return CompletionResult(
                 success=False,
@@ -210,9 +201,7 @@ class OllamaProvider(BaseLLMProvider):
     def list_local_models(self) -> list[str]:
         """List models available in the local Ollama installation."""
         try:
-            response = self.client.get("/api/tags")
-            response.raise_for_status()
-            data = response.json()
+            data = list_models()
             return [m["name"] for m in data.get("models", [])]
         except Exception:
             return []
