@@ -39,46 +39,6 @@ if TYPE_CHECKING:
 
 
 # ---------------------------------------------------------------------------
-# Field Mappings
-# ---------------------------------------------------------------------------
-# The DB stores documents using generic column names (entity_name, entity_id, etc.)
-# so fraud queries work across all document types. Each document type needs a mapping
-# that tells the storage layer which field in the extracted data corresponds to which
-# generic column.
-#
-# Keys   = generic DB column names (fixed, same for all document types)
-# Values = field names in the Pydantic schema's extracted data dict, or None if
-#          that document type doesn't have this concept
-#
-# Example: for an invoice, the "entity" is the vendor. For a receipt, it's the merchant.
-#          Both get stored in the same entity_name column.
-#
-# Users can register custom mappings for their own document types via
-# storage.register_field_mapping("contract", {"entity_name": "counterparty", ...})
-# ---------------------------------------------------------------------------
-DEFAULT_FIELD_MAPPINGS: Dict[str, Dict[str, Optional[str]]] = {
-    "invoice": {
-        "entity_name": "vendor_name",  # who sent the invoice
-        "entity_id": "vendor_tax_id",  # their tax/business ID
-        "document_number": "invoice_number",  # unique document reference
-        "total_amount": "total_amount",  # money amount
-        "currency": "currency",  # currency code (USD, EUR, etc.)
-        "bank_account": "bank_account",  # payment destination
-        "bank_routing": "bank_routing",  # routing/SWIFT/BIC code
-    },
-    "receipt": {
-        "entity_name": "merchant_name",  # who issued the receipt
-        "entity_id": None,  # receipts typically don't have tax IDs
-        "document_number": None,  # receipts rarely have a reference number
-        "total_amount": "total",  # note: ReceiptData uses "total", not "total_amount"
-        "currency": None,
-        "bank_account": None,
-        "bank_routing": None,
-    },
-}
-
-
-# ---------------------------------------------------------------------------
 # Dataclasses for fraud query results
 # ---------------------------------------------------------------------------
 # These are plain data containers — no logic, no DB dependency.
@@ -203,9 +163,7 @@ class BaseStorage(ABC):
         # Copy the default mappings so each storage instance has its own dict.
         # dict() creates a shallow copy — good enough since the inner dicts
         # are only read, never mutated in place.
-        self.field_mappings: Dict[str, Dict[str, Optional[str]]] = dict(
-            DEFAULT_FIELD_MAPPINGS
-        )
+        self.field_mappings: Dict[str, Dict[str, Optional[str]]] = dict()
 
     def register_field_mapping(
         self, doc_type: str, mapping: Dict[str, Optional[str]]
