@@ -55,6 +55,11 @@ def build_parser():
         action="store_true",
         help="List available schemas and exit",
     )
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="Run validation rules on extracted data",
+    )
 
     return parser
 
@@ -151,6 +156,7 @@ def main():
         source=args.file_path,
         schema=schema,
         model=args.model,
+        validate=args.validate,
     )
 
     if not result.success:
@@ -158,7 +164,23 @@ def main():
         sys.exit(1)
 
     indent = 2 if args.pretty else None
-    output = json.dumps(result.data, indent=indent, default=str)
+
+    if result.validation:
+        full_output = {
+            "data": result.data,
+            "validation": {
+                "is_valid": result.validation.is_valid,
+                "confidence": result.validation.confidence,
+                "fraud_risk": result.validation.fraud_risk,
+                "errors": result.validation.errors,
+                "warnings": result.validation.warnings,
+                "fraud_reasons": result.validation.fraud_reasons,
+                "rules_checked": result.validation.rules_checked,
+            },
+        }
+        output = json.dumps(full_output, indent=indent, default=str)
+    else:
+        output = json.dumps(result.data, indent=indent, default=str)
 
     if args.output:
         args.output.write_text(output)
