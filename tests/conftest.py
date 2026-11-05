@@ -144,6 +144,58 @@ def temp_output_dir(tmp_path) -> Path:
     return output_dir
 
 
+@pytest.fixture
+def valid_invoice_data() -> Dict:
+    """Provide a mathematically consistent invoice data dict."""
+    return {
+        "invoice_number": "INV-2024-001",
+        "date": "2024-01-15",
+        "due_date": "2024-02-15",
+        "vendor_name": "Tech Solutions Inc.",
+        "vendor_tax_id": "US123456789",
+        "customer_name": "Acme Corp",
+        "customer_address": "123 Business St",
+        "line_items": [
+            {
+                "name": "Service A",
+                "amount": 100.00,
+                "quantity": 2,
+                "unit_price_with_taxes": 50.00,
+            },
+            {
+                "name": "Service B",
+                "amount": 200.00,
+                "quantity": 1,
+                "unit_price_with_taxes": 200.00,
+            },
+        ],
+        "subtotal": 300.00,
+        "tax_amount": 24.00,
+        "discount": 0.0,
+        "total_amount": 324.00,
+        "currency": "USD",
+    }
+
+
+@pytest.fixture
+def valid_receipt_data() -> Dict:
+    """Provide a mathematically consistent receipt data dict."""
+    return {
+        "merchant_name": "Coffee Shop",
+        "date": "2024-03-15",
+        "time": "14:30",
+        "items": [
+            {"name": "Latte", "amount": 5.50, "quantity": 1},
+            {"name": "Muffin", "amount": 3.50, "quantity": 2},
+        ],
+        "subtotal": 9.00,
+        "tax": 0.72,
+        "total": 9.72,
+        "payment_method": "credit_card",
+        "card_last_four": "4242",
+    }
+
+
 @pytest.fixture(autouse=True)
 def reset_cost_tracker():
     """Automatically reset cost tracker before each test."""

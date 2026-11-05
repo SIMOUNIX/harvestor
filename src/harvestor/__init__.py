@@ -36,6 +36,7 @@ from .schemas.base import (
     ValidationResult,
 )
 from .schemas.defaults import InvoiceData, LineItem, ReceiptData
+from .validators import BaseValidationRule, RuleFinding, RuleSeverity, ValidationEngine
 
 __all__ = [
     "__version__",
@@ -48,6 +49,11 @@ __all__ = [
     "ExtractionStrategy",
     "HarvestResult",
     "ValidationResult",
+    # Validation
+    "ValidationEngine",
+    "BaseValidationRule",
+    "RuleFinding",
+    "RuleSeverity",
     # Output schemas
     "InvoiceData",
     "ReceiptData",

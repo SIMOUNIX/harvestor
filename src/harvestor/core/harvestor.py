@@ -38,6 +38,8 @@ class Harvestor:
         cost_limit_per_doc: float = 0.10,
         daily_cost_limit: Optional[float] = None,
         base_url: Optional[str] = None,
+        validate: bool = False,
+        validation_rules: Optional[List] = None,
     ):
         """
         Initialize Harvestor.
@@ -48,6 +50,8 @@ class Harvestor:
             cost_limit_per_doc: Maximum cost per document (default: $0.10)
             daily_cost_limit: Optional daily cost limit
             base_url: Optional base URL override for the provider
+            validate: Run validation rules on extracted data (default: False)
+            validation_rules: Custom validation rules (used with validate=True)
         """
         self.model_name = model
         self.api_key = api_key
@@ -60,6 +64,24 @@ class Harvestor:
 
         # Initialize LLM parser (handles provider selection)
         self.llm_parser = LLMParser(model=model, api_key=api_key, base_url=base_url)
+
+        # Initialize validation engine if enabled
+        self._validate = validate
+        self._validation_engine = None
+        if validate:
+            from ..validators import ValidationEngine
+
+            self._validation_engine = ValidationEngine(rules=validation_rules)
+
+    def _maybe_validate(
+        self, result: HarvestResult, schema: Type[BaseModel]
+    ) -> HarvestResult:
+        """Run validation if enabled and extraction succeeded."""
+        if self._validate and self._validation_engine and result.success:
+            result.validation = self._validation_engine.validate(
+                data=result.data, schema=schema
+            )
+        return result
 
     @staticmethod
     def get_doc_type_from_schema(schema: Type[BaseModel]) -> str:
@@ -120,7 +142,7 @@ class Harvestor:
 
         total_time = time.time() - start_time
 
-        return HarvestResult(
+        result = HarvestResult(
             success=extraction_result.success,
             document_id=document_id,
             document_type=doc_type,
@@ -134,6 +156,7 @@ class Harvestor:
             error=extraction_result.error,
             language=language,
         )
+        return self._maybe_validate(result, schema)
 
     def harvest_file(
         self,
@@ -349,7 +372,7 @@ class Harvestor:
 
         processing_time = time.time() - start_time
 
-        return HarvestResult(
+        result = HarvestResult(
             success=extraction_result.success,
             document_id=document_id,
             document_type=doc_type,
@@ -363,6 +386,7 @@ class Harvestor:
             error=extraction_result.error,
             language=language,
         )
+        return self._maybe_validate(result, schema)
 
     def harvest_batch(
         self,
@@ -417,6 +441,8 @@ def harvest(
     api_key: Optional[str] = None,
     filename: Optional[str] = None,
     base_url: Optional[str] = None,
+    validate: bool = False,
+    validation_rules: Optional[List] = None,
 ) -> HarvestResult:
     """
     One-liner function for quick extraction.
@@ -435,8 +461,9 @@ def harvest(
         # With OpenAI
         result = harvest("invoice.jpg", schema=InvoiceData, model="gpt-4o-mini")
 
-        # With local Ollama
-        result = harvest("invoice.txt", schema=InvoiceData, model="llama3")
+        # With validation
+        result = harvest("invoice.pdf", schema=InvoiceData, validate=True)
+        print(result.validation.fraud_risk)
         ```
 
     Args:
@@ -448,11 +475,19 @@ def harvest(
         api_key: API key (uses env var if not provided)
         filename: Original filename (required when source is bytes/file-like)
         base_url: Optional base URL override
+        validate: Run validation rules on extracted data (default: False)
+        validation_rules: Custom validation rules (used with validate=True)
 
     Returns:
         HarvestResult with extracted data
     """
-    harvestor = Harvestor(api_key=api_key, model=model, base_url=base_url)
+    harvestor = Harvestor(
+        api_key=api_key,
+        model=model,
+        base_url=base_url,
+        validate=validate,
+        validation_rules=validation_rules,
+    )
     return harvestor.harvest_file(
         source=source,
         schema=schema,
